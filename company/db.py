@@ -1,0 +1,233 @@
+"""SQLite persistence for company state.
+
+Everything the company knows — directives, tasks, artifacts, the activity feed —
+lives here so the company survives restarts and the dashboard can read a
+consistent snapshot. A single connection guarded by a lock keeps it simple and
+correct for the company's modest write volume.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from typing import Any
+
+from .models import (
+    Artifact,
+    Department,
+    Directive,
+    Event,
+    Priority,
+    Task,
+    TaskStatus,
+)
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS directives (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    department TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    directive_id TEXT,
+    parent_id TEXT,
+    created_by TEXT NOT NULL,
+    result TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    department TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    task_id TEXT,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    department TEXT NOT NULL,
+    message TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_department ON tasks(department);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+"""
+
+
+class Database:
+    def __init__(self, path: str) -> None:
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    # ---- directives -------------------------------------------------------
+    def add_directive(self, d: Directive) -> Directive:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO directives (id, text, status, summary, created_at) VALUES (?,?,?,?,?)",
+                (d.id, d.text, d.status.value, d.summary, d.created_at),
+            )
+            self._conn.commit()
+        return d
+
+    def update_directive(self, directive_id: str, **fields: Any) -> None:
+        if not fields:
+            return
+        if "status" in fields and isinstance(fields["status"], TaskStatus):
+            fields["status"] = fields["status"].value
+        self._update("directives", directive_id, fields)
+
+    def get_directives(self) -> list[dict]:
+        return [dict(r) for r in self._query("SELECT * FROM directives ORDER BY created_at DESC")]
+
+    # ---- tasks ------------------------------------------------------------
+    def add_task(self, t: Task) -> Task:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO tasks
+                   (id, title, department, description, status, priority, directive_id,
+                    parent_id, created_by, result, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    t.id, t.title, t.department.value, t.description, t.status.value,
+                    t.priority.value, t.directive_id, t.parent_id, t.created_by.value,
+                    t.result, t.created_at, t.updated_at,
+                ),
+            )
+            self._conn.commit()
+        return t
+
+    def update_task(self, task_id: str, **fields: Any) -> None:
+        for key in ("status", "priority", "department", "created_by"):
+            if key in fields and hasattr(fields[key], "value"):
+                fields[key] = fields[key].value
+        self._update("tasks", task_id, fields)
+
+    def claim_next_task(self, department: Department) -> Task | None:
+        """Atomically pick the oldest pending task for a department and mark it in-progress.
+
+        The claim happens under the write lock so two worker loops never grab the
+        same task.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT * FROM tasks
+                   WHERE department=? AND status=?
+                   ORDER BY CASE priority
+                       WHEN 'urgent' THEN 0 WHEN 'high' THEN 1
+                       WHEN 'normal' THEN 2 ELSE 3 END, created_at
+                   LIMIT 1""",
+                (department.value, TaskStatus.PENDING.value),
+            ).fetchone()
+            if row is None:
+                return None
+            task = _row_to_task(row)
+            self._conn.execute(
+                "UPDATE tasks SET status=?, updated_at=updated_at WHERE id=?",
+                (TaskStatus.IN_PROGRESS.value, task.id),
+            )
+            self._conn.commit()
+            task.status = TaskStatus.IN_PROGRESS
+            return task
+
+    def get_task(self, task_id: str) -> Task | None:
+        rows = self._query("SELECT * FROM tasks WHERE id=?", (task_id,))
+        return _row_to_task(rows[0]) if rows else None
+
+    def get_tasks(self, directive_id: str | None = None) -> list[Task]:
+        if directive_id:
+            rows = self._query(
+                "SELECT * FROM tasks WHERE directive_id=? ORDER BY created_at", (directive_id,)
+            )
+        else:
+            rows = self._query("SELECT * FROM tasks ORDER BY created_at")
+        return [_row_to_task(r) for r in rows]
+
+    def count_tasks_by_status(self) -> dict[str, int]:
+        rows = self._query("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
+        return {r["status"]: r["n"] for r in rows}
+
+    # ---- artifacts --------------------------------------------------------
+    def add_artifact(self, a: Artifact) -> Artifact:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO artifacts (id, title, department, kind, content, task_id, created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (a.id, a.title, a.department.value, a.kind, a.content, a.task_id, a.created_at),
+            )
+            self._conn.commit()
+        return a
+
+    def get_artifacts(self) -> list[dict]:
+        return [dict(r) for r in self._query("SELECT * FROM artifacts ORDER BY created_at DESC")]
+
+    # ---- events -----------------------------------------------------------
+    def add_event(self, e: Event) -> Event:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO events (id, department, message, kind, created_at) VALUES (?,?,?,?,?)",
+                (e.id, e.department.value, e.message, e.kind, e.created_at),
+            )
+            self._conn.commit()
+        return e
+
+    def get_events(self, limit: int = 200) -> list[dict]:
+        rows = self._query("SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,))
+        return [dict(r) for r in rows]
+
+    # ---- internals --------------------------------------------------------
+    def _update(self, table: str, row_id: str, fields: dict[str, Any]) -> None:
+        from .models import now as _now
+
+        fields = dict(fields)
+        if table == "tasks":
+            fields.setdefault("updated_at", _now())
+        cols = ", ".join(f"{k}=?" for k in fields)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE {table} SET {cols} WHERE id=?", (*fields.values(), row_id)
+            )
+            self._conn.commit()
+
+    def _query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+
+def _row_to_task(row: sqlite3.Row) -> Task:
+    return Task(
+        id=row["id"],
+        title=row["title"],
+        department=Department(row["department"]),
+        description=row["description"],
+        status=TaskStatus(row["status"]),
+        priority=Priority(row["priority"]),
+        directive_id=row["directive_id"],
+        parent_id=row["parent_id"],
+        created_by=Department(row["created_by"]),
+        result=row["result"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+__all__ = ["Database", "json"]
