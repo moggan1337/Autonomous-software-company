@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autonomous Software Company</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◆</span>
+      <div>
+        <h1>Autonomous Software Company</h1>
+        <p class="tagline">One person sets direction. AI agents run everything else.</p>
+      </div>
+    </div>
+    <div class="mode" id="mode-badge">connecting…</div>
+  </header>
+
+  <main>
+    <section class="console">
+      <h2>CEO console</h2>
+      <p class="hint">Give the company a direction. The CEO agent delegates; departments hand off work to each other automatically.</p>
+      <form id="directive-form">
+        <input id="directive-input" type="text" autocomplete="off"
+               placeholder="e.g. Launch a dark mode feature" />
+        <button type="submit">Delegate</button>
+      </form>
+      <div class="examples" id="examples"></div>
+    </section>
+
+    <section class="metrics" id="metrics"></section>
+
+    <section class="departments">
+      <h2>Departments</h2>
+      <div class="dept-grid" id="dept-grid"></div>
+    </section>
+
+    <div class="two-col">
+      <section class="feed">
+        <h2>Live activity</h2>
+        <ul id="feed"></ul>
+      </section>
+      <section class="artifacts">
+        <h2>Deliverables</h2>
+        <ul id="artifacts"></ul>
+      </section>
+    </div>
+  </main>
+
+  <div class="modal" id="artifact-modal" hidden>
+    <div class="modal-body">
+      <button class="modal-close" id="modal-close">×</button>
+      <h3 id="modal-title"></h3>
+      <pre id="modal-content"></pre>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

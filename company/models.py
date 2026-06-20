@@ -1,0 +1,135 @@
+"""Domain model for the autonomous software company.
+
+These are the nouns every agent and the dashboard share: departments, the tasks
+that flow between them, the artifacts they produce, and the activity log.
+"""
+from __future__ import annotations
+
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+
+
+def _id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def now() -> float:
+    return time.time()
+
+
+class Department(str, Enum):
+    CEO = "ceo"
+    SUPPORT = "support"
+    SALES = "sales"
+    MARKETING = "marketing"
+    PRODUCT = "product"
+    DEVELOPMENT = "development"
+    QA = "qa"
+    ANALYTICS = "analytics"
+
+    @property
+    def title(self) -> str:
+        return {
+            Department.CEO: "CEO / Orchestrator",
+            Department.SUPPORT: "Customer Support",
+            Department.SALES: "Sales",
+            Department.MARKETING: "Marketing",
+            Department.PRODUCT: "Product Management",
+            Department.DEVELOPMENT: "Development",
+            Department.QA: "Quality Assurance",
+            Department.ANALYTICS: "Analytics",
+        }[self]
+
+
+# Departments that actually pick up and work tasks (the CEO only delegates).
+WORKER_DEPARTMENTS = [d for d in Department if d != Department.CEO]
+
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    BLOCKED = "blocked"
+
+
+class Priority(str, Enum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+@dataclass
+class Task:
+    title: str
+    department: Department
+    description: str = ""
+    status: TaskStatus = TaskStatus.PENDING
+    priority: Priority = Priority.NORMAL
+    id: str = field(default_factory=lambda: _id("task"))
+    directive_id: str | None = None
+    parent_id: str | None = None
+    created_by: Department = Department.CEO
+    result: str = ""
+    created_at: float = field(default_factory=now)
+    updated_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["department"] = self.department.value
+        d["status"] = self.status.value
+        d["priority"] = self.priority.value
+        d["created_by"] = self.created_by.value
+        return d
+
+
+@dataclass
+class Artifact:
+    """A concrete deliverable produced by a department (a doc, a PR, a campaign)."""
+
+    title: str
+    department: Department
+    kind: str  # e.g. "spec", "code", "campaign", "report", "reply"
+    content: str
+    task_id: str | None = None
+    id: str = field(default_factory=lambda: _id("art"))
+    created_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["department"] = self.department.value
+        return d
+
+
+@dataclass
+class Directive:
+    """A human instruction to the company. The CEO breaks it into tasks."""
+
+    text: str
+    id: str = field(default_factory=lambda: _id("dir"))
+    status: TaskStatus = TaskStatus.PENDING
+    summary: str = ""
+    created_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["status"] = self.status.value
+        return d
+
+
+@dataclass
+class Event:
+    """An entry in the company activity feed."""
+
+    department: Department
+    message: str
+    kind: str = "info"  # info | delegate | work | artifact | metric | error
+    id: str = field(default_factory=lambda: _id("evt"))
+    created_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["department"] = self.department.value
+        return d
