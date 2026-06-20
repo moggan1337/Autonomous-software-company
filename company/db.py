@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     parent_id TEXT,
     created_by TEXT NOT NULL,
     result TEXT NOT NULL DEFAULT '',
+    rework_count INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -105,12 +106,12 @@ class Database:
             self._conn.execute(
                 """INSERT INTO tasks
                    (id, title, department, description, status, priority, directive_id,
-                    parent_id, created_by, result, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    parent_id, created_by, result, rework_count, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     t.id, t.title, t.department.value, t.description, t.status.value,
                     t.priority.value, t.directive_id, t.parent_id, t.created_by.value,
-                    t.result, t.created_at, t.updated_at,
+                    t.result, t.rework_count, t.created_at, t.updated_at,
                 ),
             )
             self._conn.commit()
@@ -225,6 +226,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         parent_id=row["parent_id"],
         created_by=Department(row["created_by"]),
         result=row["result"],
+        rework_count=row["rework_count"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

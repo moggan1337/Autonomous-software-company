@@ -26,18 +26,30 @@ concrete **deliverable** (a spec, code, a QA report, a campaign, a sales plan,
 help docs, an analytics report) and **hands off** the natural next steps to other
 departments — no human in the loop after the first instruction.
 
+The agents are also **grounded and accountable**, not just generative:
+
+- **Company memory** — before acting, every agent recalls relevant prior work
+  (specs, code, reports) and builds on it instead of starting cold.
+- **Real tools** — Analytics computes live metrics from the operational database
+  (throughput, cycle time, rework rate); Development writes code to a workspace
+  and validates that it compiles.
+- **QA rework loop** — QA independently re-checks each build and can **reject**
+  it, sending it back to Development for a fix. The loop is bounded
+  (`MAX_REWORK`), so it always terminates — a feature ships once it passes or the
+  rework budget is exhausted.
+
 ## What the agents do
 
 | Department | Responsibility |
 |---|---|
 | **CEO / Orchestrator** | The only agent you talk to. Turns your direction into the first wave of delegated tasks. |
 | **Product Management** | Writes specs with user stories & acceptance criteria; routes build + positioning. |
-| **Development** | Implements features from specs; opens a PR; hands the build to QA. |
-| **Quality Assurance** | Verifies builds, reports results, signs off; asks Support to prep release notes. |
+| **Development** | Implements features from specs, validates the code compiles, opens a PR; fixes QA-reported defects on rework. |
+| **Quality Assurance** | Independently re-checks builds, **approves or rejects**, drives the rework loop, then asks Support to prep release notes. |
 | **Marketing** | Creates positioning and launch campaigns; briefs Sales. |
 | **Sales** | Turns campaign interest into pipeline and outreach sequences. |
-| **Customer Support** | Resolves issues, writes help content, escalates real gaps to Product. |
-| **Analytics** | Measures outcomes and recommends the next move. |
+| **Customer Support** | Resolves issues, reuses/writes help content, escalates real gaps to Product. |
+| **Analytics** | Measures **real outcomes from company data** and recommends the next move. |
 
 ## Runs with or without an API key
 
@@ -96,9 +108,10 @@ All via environment variables (or a `.env` file — see `.env.example`):
 company/
   config.py          settings + .env loader
   models.py          domain types: Department, Task, Artifact, Directive, Event
-  db.py              SQLite persistence (atomic task claiming, snapshots)
+  db.py              SQLite persistence (atomic task claiming, snapshots, rework tracking)
   llm.py             Claude wrapper (adaptive thinking, structured outputs, graceful fallback)
-  orchestrator.py    the engine: delegation, work loop, bounded cascade, background worker
+  tools.py           real tools: company memory (recall), live metrics, code validation
+  orchestrator.py    the engine: delegation, work loop, bounded cascade + rework, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
     base.py          shared agent contract: summary + artifact + cross-dept hand-offs
@@ -112,9 +125,9 @@ tests/               pytest suite (runs fully offline in simulation mode)
 **How work flows:** `submit_directive` → CEO plans first tasks → the work loop has
 each department atomically claim its next task, the agent does the work (Claude or
 simulation), persists a deliverable, and queues follow-up tasks for other
-departments. A depth limit (`MAX_DEPTH`) keeps the natural chain
-(spec → build → QA → docs) from running forever. A directive auto-closes when all
-its tasks are done.
+departments. Two safety limits keep it from running forever: a hand-off depth
+limit (`MAX_DEPTH`) and a rework budget (`MAX_REWORK`) for the QA → Development
+loop. A directive auto-closes when all its tasks are done.
 
 ## API
 
@@ -132,9 +145,11 @@ pip install pytest httpx
 python -m pytest
 ```
 
-The suite runs entirely offline (forced simulation mode, isolated temp DB) and
-covers the CEO routing, the cross-department cascade, cascade termination,
-deliverable production, the snapshot shape, the LLM fallback, and the HTTP API.
+The suite (20 tests) runs entirely offline (forced simulation mode, isolated
+temp DB) and covers CEO routing, the cross-department cascade and its
+termination, deliverable production, the snapshot shape, the LLM fallback, the
+HTTP API, the tools (memory recall, live metrics, code validation), and the QA
+rework loop (rejection → fix → re-verify, bounded and terminating).
 
 ## Design notes
 

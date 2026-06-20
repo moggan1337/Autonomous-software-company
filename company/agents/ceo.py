@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ..llm import LLMClient
 from ..models import Department, Priority, Task, WORKER_DEPARTMENTS
+from ..tools import ToolBox
 
 PLAN_SCHEMA = {
     "type": "object",
@@ -49,13 +50,16 @@ SYSTEM = (
 class CEOAgent:
     department = Department.CEO
 
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: LLMClient, tools: ToolBox) -> None:
         self.llm = llm
+        self.tools = tools
 
     def plan(self, directive_text: str, directive_id: str) -> tuple[str, list[Task]]:
-        raw = self.llm.generate_json(
-            SYSTEM, f"DIRECTION FROM HUMAN:\n{directive_text}", PLAN_SCHEMA
-        )
+        memory = self.tools.recall_summary(directive_text)
+        prompt = f"DIRECTION FROM HUMAN:\n{directive_text}"
+        if memory:
+            prompt += f"\n\n{memory}"
+        raw = self.llm.generate_json(SYSTEM, prompt, PLAN_SCHEMA)
         if raw is None:
             raw = self._simulate(directive_text)
 

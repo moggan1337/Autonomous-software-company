@@ -53,7 +53,7 @@ function renderMetrics(m) {
     { label: "Tasks", num: m.total_tasks },
     { label: "In progress", num: m.in_progress },
     { label: "Done", num: m.done },
-    { label: "Blocked", num: m.blocked },
+    { label: "Rework", num: m.rework ?? 0 },
     { label: "Deliverables", num: m.artifacts },
   ];
   document.getElementById("metrics").innerHTML = cards

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from pathlib import Path
 
 from .agents import AGENT_CLASSES, CEOAgent
 from .config import SETTINGS, Settings
@@ -25,14 +26,26 @@ from .models import (
     Department,
     Directive,
     Event,
+    Priority,
     Task,
     TaskStatus,
     WORKER_DEPARTMENTS,
 )
+from .tools import ToolBox
 
 log = logging.getLogger("company.orchestrator")
 
-MAX_DEPTH = 4  # how many hand-offs deep the cascade may run
+MAX_DEPTH = 8   # how many hand-offs deep the cascade may run
+MAX_REWORK = 2  # how many times QA may send a feature back before it ships anyway
+
+_QA_PREFIXES = ("Re-verify ", "Verify ", "Re-test ", "Test ")
+
+
+def _feature_name(title: str) -> str:
+    for p in _QA_PREFIXES:
+        if title.startswith(p):
+            return title[len(p):]
+    return title
 
 
 class Company:
@@ -40,8 +53,10 @@ class Company:
         self.settings = settings or SETTINGS
         self.db = Database(self.settings.db_path)
         self.llm = LLMClient(self.settings)
-        self.ceo = CEOAgent(self.llm)
-        self.agents = {dept: cls(self.llm) for dept, cls in AGENT_CLASSES.items()}
+        workspace = Path(self.settings.db_path).resolve().parent / "workspace"
+        self.tools = ToolBox(self.db, workspace)
+        self.ceo = CEOAgent(self.llm, self.tools)
+        self.agents = {dept: cls(self.llm, self.tools) for dept, cls in AGENT_CLASSES.items()}
         self.step_delay = step_delay
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
@@ -88,15 +103,58 @@ class Company:
                 f"Produced {result.artifact.kind}: {result.artifact.title}",
                 "artifact",
             )
-        for follow in result.followups:
-            self.db.add_task(follow)
-            self._log(
-                department,
-                f"Handed off to {follow.department.title}: {follow.title}",
-                "delegate",
-            )
+
+        if department == Department.QA and result.verdict == "rejected":
+            self._handle_rejection(task, result, depth)
+        else:
+            for follow in result.followups:
+                self.db.add_task(follow)
+                self._log(
+                    department,
+                    f"Handed off to {follow.department.title}: {follow.title}",
+                    "delegate",
+                )
         self._maybe_close_directive(task.directive_id)
         return True
+
+    def _handle_rejection(self, task: Task, result, depth: int) -> None:
+        """QA rejected a build: send it back to Development, or ship if capped."""
+        feature = _feature_name(task.title)
+        if task.rework_count < MAX_REWORK and depth < MAX_DEPTH:
+            fix = Task(
+                title=f"Fix issues in {feature}",
+                department=Department.DEVELOPMENT,
+                description=result.summary,
+                priority=Priority.HIGH,
+                directive_id=task.directive_id,
+                parent_id=task.id,
+                created_by=Department.QA,
+                rework_count=task.rework_count + 1,
+            )
+            self.db.add_task(fix)
+            self._log(
+                Department.QA,
+                f"Rejected build; opened rework #{fix.rework_count} for Development: {feature}",
+                "delegate",
+            )
+        else:
+            # Rework budget exhausted — ship with known issues and notify Support.
+            rel = Task(
+                title=f"Release notes for {feature} (known issues)",
+                department=Department.SUPPORT,
+                description="Shipping after exhausting rework budget; document known issues.",
+                priority=Priority.NORMAL,
+                directive_id=task.directive_id,
+                parent_id=task.id,
+                created_by=Department.QA,
+                rework_count=task.rework_count,
+            )
+            self.db.add_task(rel)
+            self._log(
+                Department.QA,
+                f"Rework budget exhausted for {feature}; shipping with known issues.",
+                "info",
+            )
 
     def tick(self) -> int:
         """Give every department one chance to work. Returns tasks completed."""
@@ -164,6 +222,7 @@ class Company:
                 "pending": counts.get("pending", 0),
                 "blocked": counts.get("blocked", 0),
                 "artifacts": len(self.db.get_artifacts()),
+                "rework": sum(1 for t in tasks if t["rework_count"] > 0),
             },
         }
 

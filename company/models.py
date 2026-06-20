@@ -73,6 +73,7 @@ class Task:
     parent_id: str | None = None
     created_by: Department = Department.CEO
     result: str = ""
+    rework_count: int = 0
     created_at: float = field(default_factory=now)
     updated_at: float = field(default_factory=now)
 
