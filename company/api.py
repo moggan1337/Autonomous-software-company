@@ -12,17 +12,22 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .config import SETTINGS
 from .models import Department
 from .orchestrator import Company
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+# Optional auth: when set (COMPANY_API_TOKEN), state-changing requests must carry
+# the token. Reads (GET) stay open so the dashboard works without plumbing.
+API_TOKEN = SETTINGS.api_token
 
 # A small delay per task makes the activity feed readable in simulation mode,
 # where work would otherwise complete instantly.
@@ -39,7 +44,19 @@ async def lifespan(app: FastAPI):
         company.stop()
 
 
-app = FastAPI(title="Autonomous Software Company", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Autonomous Software Company", version="0.4.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    """Gate state-changing requests behind a token when one is configured."""
+    if API_TOKEN and request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        header = request.headers.get("authorization", "")
+        provided = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        provided = provided or request.headers.get("x-api-token", "")
+        if provided != API_TOKEN:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 class DirectiveIn(BaseModel):
@@ -140,7 +157,7 @@ async def stream() -> StreamingResponse:
                 try:
                     item = await asyncio.wait_for(q.get(), timeout=15)
                     yield f"data: {json.dumps(item)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keepalive\n\n"  # comment frame keeps the connection open
         finally:
             company.bus.unsubscribe(q)

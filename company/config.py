@@ -56,6 +56,7 @@ class Settings:
     db_path: str
     force_simulate: bool
     budget: float
+    api_token: str | None
 
     @property
     def simulate(self) -> bool:
@@ -71,6 +72,7 @@ def load_settings() -> Settings:
         db_path=os.environ.get("COMPANY_DB", str(ROOT / "company.db")),
         force_simulate=os.environ.get("COMPANY_SIMULATE", "0") == "1",
         budget=float(os.environ.get("COMPANY_BUDGET", "25") or 25),
+        api_token=os.environ.get("COMPANY_API_TOKEN") or None,
     )
 
 

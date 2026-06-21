@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS usage (
     cost REAL NOT NULL,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kpi_snapshots (
+    id TEXT PRIMARY KEY,
+    ts REAL NOT NULL,
+    tasks_done INTEGER NOT NULL,
+    deliverables INTEGER NOT NULL,
+    cost REAL NOT NULL,
+    revenue REAL NOT NULL,
+    customers INTEGER NOT NULL,
+    tickets_resolved INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -252,6 +262,27 @@ class Database:
             "output_tokens": total["o"],
             "by_department": {d: round(c, 4) for d, c in by_dept.items()},
         }
+
+    # ---- KPI time series --------------------------------------------------
+    def add_kpi_snapshot(self, snapshot_id: str, ts: float, values: dict) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO kpi_snapshots
+                   (id, ts, tasks_done, deliverables, cost, revenue, customers, tickets_resolved)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    snapshot_id, ts, values["tasks_done"], values["deliverables"],
+                    values["cost"], values["revenue"], values["customers"],
+                    values["tickets_resolved"],
+                ),
+            )
+            self._conn.commit()
+
+    def get_kpis(self, limit: int = 300) -> list[dict]:
+        rows = self._query(
+            "SELECT * FROM kpi_snapshots ORDER BY ts DESC LIMIT ?", (limit,)
+        )
+        return [dict(r) for r in reversed(rows)]
 
     def cost_by_directive(self, directive_id: str) -> float:
         row = self._query(

@@ -61,6 +61,19 @@ And the human stays **in control** when they want to be:
   usage and cost; the dashboard shows live spend against a budget and the
   company raises an alert when the budget is exceeded.
 
+And it's **production-ready**:
+
+- **Business KPIs over time** — revenue, customers, tickets resolved, and
+  deliverables are snapshotted after every completed task and charted live on the
+  dashboard. Business figures are modeled from real activity (each closed sales
+  task is a deal), so the charts move with what the company actually does.
+- **Optional auth** — set `COMPANY_API_TOKEN` and state-changing requests require
+  the token (reads stay open so the dashboard still works); unset, everything is
+  open for local use.
+- **Container + CI** — a `Dockerfile` and `docker compose` for one-command
+  deploys, and a GitHub Actions workflow that lints (ruff) and runs the full test
+  suite on every push, plus a Docker build job.
+
 ## What the agents do
 
 | Department | Responsibility |
@@ -103,6 +116,14 @@ cp .env.example .env
 python run.py serve
 ```
 
+### Run with Docker
+
+```bash
+docker compose up --build      # http://127.0.0.1:8000, state persisted in a volume
+# or:
+docker build -t company . && docker run -p 8000:8000 company
+```
+
 ## The dashboard
 
 The single human seat. From `http://127.0.0.1:8000` you can:
@@ -113,6 +134,7 @@ The single human seat. From `http://127.0.0.1:8000` you can:
 - Click any **department** to configure its effort, model, instructions, or disable it.
 - Watch a live **reasoning ticker** as agents start working (streamed, not polled).
 - Watch every **department** light up as it works (live status).
+- Track **Business KPIs** (revenue, customers, tickets resolved) on live charts.
 - Follow the **activity feed** of delegations, work, and hand-offs in real time.
 - Open any **deliverable** to read what an agent produced.
 - See company-wide **metrics** (tasks, in progress, awaiting, rework, est. cost).
@@ -129,6 +151,7 @@ All via environment variables (or a `.env` file — see `.env.example`):
 | `COMPANY_DB` | `company.db` | SQLite state file. |
 | `COMPANY_SIMULATE` | `0` | Set `1` to force simulation even with a key. |
 | `COMPANY_BUDGET` | `25` | Spend budget (USD) before the company raises a budget alert. |
+| `COMPANY_API_TOKEN` | _(unset)_ | If set, state-changing API calls require this token. |
 
 ## Architecture
 
@@ -148,9 +171,12 @@ company/
     base.py          shared agent contract: summary + artifact + cross-dept hand-offs
     departments.py   the seven department agents (Claude-guided + simulation)
   api.py             FastAPI: dashboard host + JSON API
-web/                 single-page dashboard (no build step)
+web/                 single-page dashboard (no build step) — incl. live KPI charts
 run.py               `serve` and `demo` entrypoints
 tests/               pytest suite (runs fully offline in simulation mode)
+Dockerfile           container image; docker-compose.yml for one-command run
+pyproject.toml       project metadata, ruff + pytest config
+.github/workflows/   CI: ruff lint + pytest + docker build on every push
 ```
 
 **How work flows:** `submit_directive` → CEO plans first tasks → the work loop has
@@ -175,20 +201,25 @@ loop. A directive auto-closes when all its tasks are done.
 | `GET` | `/api/agents` | List per-department agent configs. |
 | `PUT` | `/api/agents/{department}` | Update a department's model/effort/instructions/enabled. |
 
+State-changing calls (`POST`/`PUT`) require `Authorization: Bearer <token>` (or
+`X-API-Token`) when `COMPANY_API_TOKEN` is set; `GET` endpoints stay open.
+
 ## Tests
 
 ```bash
-pip install pytest httpx
-python -m pytest
+pip install -e ".[dev]"
+ruff check .
+pytest
 ```
 
-The suite (40 tests) runs entirely offline (forced simulation mode, isolated
+The suite (46 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
-autopilot, the cross-thread event bus, and the human-in-the-loop controls
-(approval gating, agent config persistence, cost tracking, and budget alerts).
+autopilot, the cross-thread event bus, the human-in-the-loop controls
+(approval gating, agent config persistence, cost tracking, budget alerts), the
+KPI time series, and optional token auth.
 
 ## Design notes
 

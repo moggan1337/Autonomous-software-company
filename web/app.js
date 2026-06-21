@@ -63,28 +63,92 @@ function showTicker(text) {
 }
 
 async function toggleAutopilot() {
-  const path = autopilot ? "/api/world/stop" : "/api/world/start";
-  await fetch(path, { method: "POST" });
+  await mutate(autopilot ? "/api/world/stop" : "/api/world/start");
   fetchState();
 }
 
 async function submitDirective(text) {
-  await fetch("/api/directive", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
+  await mutate("/api/directive", "POST", { text });
   fetchState();
+}
+
+// Auth-aware mutation helper: attaches a stored token, prompts once on 401.
+async function mutate(path, method = "POST", body = null) {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  const token = localStorage.getItem("asc_token");
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    const t = prompt("This action requires an API token:");
+    if (t) {
+      localStorage.setItem("asc_token", t);
+      return mutate(path, method, body);
+    }
+  }
+  return res;
 }
 
 function render(state) {
   renderMode(state);
   renderToggles(state);
   renderMetrics(state);
+  renderKpis(state);
   renderApprovals(state.approvals || []);
   renderDepartments(state);
   renderFeed(state.events);
   renderArtifacts(state.artifacts);
+}
+
+function renderKpis(state) {
+  const k = state.kpi_latest || {};
+  const cards = [
+    { label: "Revenue", num: `$${Math.round(k.revenue || 0).toLocaleString()}` },
+    { label: "Customers", num: k.customers || 0 },
+    { label: "Tickets resolved", num: k.tickets_resolved || 0 },
+    { label: "Deliverables", num: k.deliverables || 0 },
+  ];
+  document.getElementById("kpi-cards").innerHTML = cards
+    .map((c) => `<div class="kpi"><div class="k-num">${c.num}</div><div class="k-label">${c.label}</div></div>`)
+    .join("");
+  drawChart(state.kpis || []);
+}
+
+function drawChart(series) {
+  const host = document.getElementById("kpi-chart");
+  const legend = document.getElementById("chart-legend");
+  if (series.length < 2) {
+    host.innerHTML = `<div class="chart-empty">Charts appear as the company completes work over time.</div>`;
+    legend.innerHTML = "";
+    return;
+  }
+  const lines = [
+    { key: "revenue", color: "#3fb950", label: "Revenue" },
+    { key: "deliverables", color: "#4f9cf9", label: "Deliverables" },
+    { key: "cost", color: "#d29922", label: "Est. cost" },
+  ];
+  legend.innerHTML = lines
+    .map((l) => `<span><i style="background:${l.color}"></i>${l.label}</span>`)
+    .join("");
+
+  const W = 800, H = 180, pad = 8;
+  const n = series.length;
+  const xAt = (i) => pad + (i * (W - 2 * pad)) / (n - 1);
+  const paths = lines
+    .map((l) => {
+      const max = Math.max(1, ...series.map((s) => s[l.key] || 0));
+      const yAt = (v) => H - pad - ((v || 0) / max) * (H - 2 * pad);
+      const d = series
+        .map((s, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(s[l.key]).toFixed(1)}`)
+        .join(" ");
+      return `<path d="${d}" fill="none" stroke="${l.color}" stroke-width="2" />`;
+    })
+    .join("");
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${paths}</svg>`;
 }
 
 function renderToggles(state) {
@@ -164,12 +228,12 @@ function renderApprovals(approvals) {
 }
 
 async function decide(taskId, action) {
-  await fetch(`/api/tasks/${taskId}/${action}`, { method: "POST" });
+  await mutate(`/api/tasks/${taskId}/${action}`);
   fetchState();
 }
 
 async function toggleApprovals() {
-  await fetch(approvalsEnabled ? "/api/approvals/stop" : "/api/approvals/start", { method: "POST" });
+  await mutate(approvalsEnabled ? "/api/approvals/stop" : "/api/approvals/start");
   fetchState();
 }
 
@@ -218,11 +282,7 @@ async function saveConfig() {
     model: document.getElementById("cfg-model").value.trim() || null,
     instructions: document.getElementById("cfg-instructions").value,
   };
-  await fetch(`/api/agents/${dept}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  await mutate(`/api/agents/${dept}`, "PUT", body);
   modal.hidden = true;
   fetchState();
 }

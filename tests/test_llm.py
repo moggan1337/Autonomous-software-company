@@ -11,6 +11,7 @@ def _sim_settings() -> Settings:
         db_path=":memory:",
         force_simulate=True,
         budget=25.0,
+        api_token=None,
     )
 
 
@@ -33,6 +34,7 @@ def test_forced_simulate_even_with_key():
         db_path=":memory:",
         force_simulate=True,
         budget=25.0,
+        api_token=None,
     )
     assert settings.simulate is True
     assert LLMClient(settings).available is False

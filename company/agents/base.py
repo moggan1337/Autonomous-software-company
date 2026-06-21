@@ -18,11 +18,11 @@ from dataclasses import dataclass, field
 from ..agentconfig import ConfigRegistry
 from ..llm import LLMClient
 from ..models import (
+    WORKER_DEPARTMENTS,
     Artifact,
     Department,
     Priority,
     Task,
-    WORKER_DEPARTMENTS,
 )
 from ..tools import ToolBox
 

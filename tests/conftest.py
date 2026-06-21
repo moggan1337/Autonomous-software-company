@@ -27,6 +27,7 @@ def company(tmp_path) -> Company:
         db_path=str(tmp_path / "company.db"),
         force_simulate=True,
         budget=25.0,
+        api_token=None,
     )
     c = Company(settings=settings)
     yield c

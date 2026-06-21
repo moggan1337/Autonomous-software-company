@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..agentconfig import ConfigRegistry
 from ..llm import LLMClient
-from ..models import Department, Priority, Task, WORKER_DEPARTMENTS
+from ..models import WORKER_DEPARTMENTS, Department, Priority, Task
 from ..tools import ToolBox
 
 PLAN_SCHEMA = {

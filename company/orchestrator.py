@@ -24,18 +24,19 @@ from .bus import EventBus
 from .config import SETTINGS, Settings, cost_for
 from .db import Database
 from .llm import LLMClient
-from .models import _id, now
-from .world import World
 from .models import (
+    WORKER_DEPARTMENTS,
     Department,
     Directive,
     Event,
     Priority,
     Task,
     TaskStatus,
-    WORKER_DEPARTMENTS,
+    _id,
+    now,
 )
 from .tools import ToolBox
+from .world import World
 
 log = logging.getLogger("company.orchestrator")
 
@@ -136,6 +137,7 @@ class Company:
 
         self.db.update_task(task.id, status=TaskStatus.DONE, result=result.summary)
         self._record_usage(task, result)
+        self._record_kpi()
         if result.artifact:
             self.db.add_artifact(result.artifact)
             self._log(
@@ -290,6 +292,30 @@ class Company:
                 "error",
             )
 
+    def _record_kpi(self) -> None:
+        """Snapshot business + operational KPIs after each completed task.
+
+        Business figures (revenue, customers) are modeled from real activity —
+        each closed sales task is a deal — so the charts move with what the
+        company actually does, not random walks.
+        """
+        metrics = self.tools.company_metrics()
+        by_dept = metrics["throughput_by_department"]
+        sales_done = by_dept.get(Department.SALES.value, 0)
+        support_done = by_dept.get(Department.SUPPORT.value, 0)
+        self.db.add_kpi_snapshot(
+            _id("kpi"),
+            now(),
+            {
+                "tasks_done": metrics["completed"],
+                "deliverables": metrics["deliverables"],
+                "cost": self.db.cost_summary()["total_cost"],
+                "revenue": sales_done * 1500.0,        # avg deal value
+                "customers": sales_done * 4,           # seats per closed deal
+                "tickets_resolved": support_done,
+            },
+        )
+
     def _loop(self) -> None:
         while self._running.is_set():
             if self.tick() == 0:
@@ -310,6 +336,11 @@ class Company:
                 bucket[t["status"]] += 1
         cost = self.db.cost_summary()
         awaiting = [t for t in tasks if t["status"] == TaskStatus.AWAITING_APPROVAL.value]
+        kpis = self.db.get_kpis(60)
+        latest_kpi = kpis[-1] if kpis else {
+            "revenue": 0, "customers": 0, "tickets_resolved": 0,
+            "tasks_done": 0, "deliverables": 0, "cost": 0,
+        }
         return {
             "mode": "simulation" if self.settings.simulate else "claude",
             "model": self.settings.model,
@@ -323,6 +354,8 @@ class Company:
             "approvals": awaiting,
             "agents": self.config.all(),
             "cost": cost,
+            "kpis": kpis,
+            "kpi_latest": latest_kpi,
             "departments": [
                 {
                     "id": d.value,

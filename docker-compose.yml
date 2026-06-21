@@ -1,0 +1,18 @@
+services:
+  company:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Leave ANTHROPIC_API_KEY empty to run in simulation mode.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - COMPANY_MODEL=${COMPANY_MODEL:-claude-opus-4-8}
+      - COMPANY_EFFORT=${COMPANY_EFFORT:-high}
+      - COMPANY_BUDGET=${COMPANY_BUDGET:-25}
+      # Set COMPANY_API_TOKEN to require a token for state-changing actions.
+      - COMPANY_API_TOKEN=${COMPANY_API_TOKEN:-}
+    volumes:
+      - company-data:/data
+
+volumes:
+  company-data: {}

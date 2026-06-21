@@ -8,8 +8,8 @@ sending work back for a bounded rework loop.
 """
 from __future__ import annotations
 
-from .base import BaseAgent
 from ..models import Department, Task
+from .base import BaseAgent
 
 _DEV_PREFIXES = ("Implement ", "Fix issues in ", "Fix issues: ", "Fix ", "Rework ")
 _QA_PREFIXES = ("Re-verify ", "Verify ", "Re-test ", "Test ")

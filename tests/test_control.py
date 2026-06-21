@@ -99,7 +99,7 @@ def test_cost_is_tracked_per_department(company):
 def test_budget_alert_fires_when_exceeded(tmp_path):
     settings = Settings(
         api_key=None, model="claude-opus-4-8", effort="high",
-        db_path=str(tmp_path / "c.db"), force_simulate=True, budget=0.0,
+        db_path=str(tmp_path / "c.db"), force_simulate=True, budget=0.0, api_token=None,
     )
     c = Company(settings=settings)
     c.submit_directive("Improve feature item z")
