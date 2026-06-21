@@ -10,6 +10,7 @@ def _sim_settings() -> Settings:
         effort="high",
         db_path=":memory:",
         force_simulate=True,
+        budget=25.0,
     )
 
 
@@ -31,6 +32,7 @@ def test_forced_simulate_even_with_key():
         effort="high",
         db_path=":memory:",
         force_simulate=True,
+        budget=25.0,
     )
     assert settings.simulate is True
     assert LLMClient(settings).available is False

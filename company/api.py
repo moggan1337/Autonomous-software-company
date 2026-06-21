@@ -12,11 +12,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .models import Department
 from .orchestrator import Company
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -43,6 +44,13 @@ app = FastAPI(title="Autonomous Software Company", version="0.1.0", lifespan=lif
 
 class DirectiveIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+
+
+class AgentConfigIn(BaseModel):
+    model: str | None = None
+    effort: str | None = None
+    instructions: str | None = Field(default=None, max_length=2000)
+    enabled: bool | None = None
 
 
 @app.get("/")
@@ -76,6 +84,48 @@ def world_start() -> dict:
 def world_stop() -> dict:
     company.stop_world()
     return {"autopilot": False}
+
+
+@app.post("/api/approvals/start")
+def approvals_start() -> dict:
+    company.set_approvals(True)
+    return {"approvals_enabled": True}
+
+
+@app.post("/api/approvals/stop")
+def approvals_stop() -> dict:
+    company.set_approvals(False)
+    return {"approvals_enabled": False}
+
+
+@app.post("/api/tasks/{task_id}/approve")
+def approve(task_id: str) -> dict:
+    if not company.approve_task(task_id):
+        raise HTTPException(status_code=404, detail="No task awaiting approval with that id.")
+    return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/reject")
+def reject(task_id: str) -> dict:
+    if not company.reject_task(task_id):
+        raise HTTPException(status_code=404, detail="No task awaiting approval with that id.")
+    return {"ok": True}
+
+
+@app.get("/api/agents")
+def list_agents() -> JSONResponse:
+    return JSONResponse({"agents": company.config.all()})
+
+
+@app.put("/api/agents/{department}")
+def update_agent(department: str, payload: AgentConfigIn) -> JSONResponse:
+    try:
+        dept = Department(department)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Unknown department.")
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    cfg = company.update_agent_config(dept, **fields)
+    return JSONResponse({"agent": cfg.to_dict()})
 
 
 @app.get("/api/stream")

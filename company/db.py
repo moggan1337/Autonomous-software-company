@@ -43,8 +43,26 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_by TEXT NOT NULL,
     result TEXT NOT NULL DEFAULT '',
     rework_count INTEGER NOT NULL DEFAULT 0,
+    approved INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_configs (
+    department TEXT PRIMARY KEY,
+    model TEXT,
+    effort TEXT,
+    instructions TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS usage (
+    id TEXT PRIMARY KEY,
+    task_id TEXT,
+    directive_id TEXT,
+    department TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost REAL NOT NULL,
+    created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
@@ -107,12 +125,12 @@ class Database:
             self._conn.execute(
                 """INSERT INTO tasks
                    (id, title, department, description, status, priority, directive_id,
-                    parent_id, created_by, result, rework_count, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    parent_id, created_by, result, rework_count, approved, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     t.id, t.title, t.department.value, t.description, t.status.value,
                     t.priority.value, t.directive_id, t.parent_id, t.created_by.value,
-                    t.result, t.rework_count, t.created_at, t.updated_at,
+                    t.result, t.rework_count, int(t.approved), t.created_at, t.updated_at,
                 ),
             )
             self._conn.commit()
@@ -122,6 +140,8 @@ class Database:
         for key in ("status", "priority", "department", "created_by"):
             if key in fields and hasattr(fields[key], "value"):
                 fields[key] = fields[key].value
+        if "approved" in fields:
+            fields["approved"] = int(fields["approved"])
         self._update("tasks", task_id, fields)
 
     def claim_next_task(self, department: Department) -> Task | None:
@@ -182,6 +202,63 @@ class Database:
     def get_artifacts(self) -> list[dict]:
         return [dict(r) for r in self._query("SELECT * FROM artifacts ORDER BY created_at DESC")]
 
+    # ---- agent configs ----------------------------------------------------
+    def get_agent_configs(self) -> dict[str, dict]:
+        rows = self._query("SELECT * FROM agent_configs")
+        return {r["department"]: dict(r) for r in rows}
+
+    def upsert_agent_config(
+        self, department: str, model, effort, instructions: str, enabled: bool
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO agent_configs (department, model, effort, instructions, enabled)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(department) DO UPDATE SET
+                     model=excluded.model, effort=excluded.effort,
+                     instructions=excluded.instructions, enabled=excluded.enabled""",
+                (department, model, effort, instructions, int(enabled)),
+            )
+            self._conn.commit()
+
+    # ---- usage / cost ledger ---------------------------------------------
+    def add_usage(
+        self, usage_id: str, task_id, directive_id, department: str,
+        input_tokens: int, output_tokens: int, cost: float, created_at: float,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO usage
+                   (id, task_id, directive_id, department, input_tokens, output_tokens, cost, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (usage_id, task_id, directive_id, department, input_tokens, output_tokens, cost, created_at),
+            )
+            self._conn.commit()
+
+    def cost_summary(self) -> dict:
+        total = self._query(
+            "SELECT COALESCE(SUM(cost),0) AS c, COALESCE(SUM(input_tokens),0) AS i, "
+            "COALESCE(SUM(output_tokens),0) AS o FROM usage"
+        )[0]
+        by_dept = {
+            r["department"]: r["c"]
+            for r in self._query(
+                "SELECT department, SUM(cost) AS c FROM usage GROUP BY department"
+            )
+        }
+        return {
+            "total_cost": round(total["c"], 4),
+            "input_tokens": total["i"],
+            "output_tokens": total["o"],
+            "by_department": {d: round(c, 4) for d, c in by_dept.items()},
+        }
+
+    def cost_by_directive(self, directive_id: str) -> float:
+        row = self._query(
+            "SELECT COALESCE(SUM(cost),0) AS c FROM usage WHERE directive_id=?", (directive_id,)
+        )[0]
+        return round(row["c"], 4)
+
     # ---- events -----------------------------------------------------------
     def add_event(self, e: Event) -> Event:
         with self._lock:
@@ -228,6 +305,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         created_by=Department(row["created_by"]),
         result=row["result"],
         rework_count=row["rework_count"],
+        approved=bool(row["approved"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

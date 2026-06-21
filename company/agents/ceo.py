@@ -6,6 +6,7 @@ departments hand work to one another.
 """
 from __future__ import annotations
 
+from ..agentconfig import ConfigRegistry
 from ..llm import LLMClient
 from ..models import Department, Priority, Task, WORKER_DEPARTMENTS
 from ..tools import ToolBox
@@ -50,16 +51,20 @@ SYSTEM = (
 class CEOAgent:
     department = Department.CEO
 
-    def __init__(self, llm: LLMClient, tools: ToolBox) -> None:
+    def __init__(self, llm: LLMClient, tools: ToolBox, config: ConfigRegistry) -> None:
         self.llm = llm
         self.tools = tools
+        self.config = config
 
     def plan(self, directive_text: str, directive_id: str) -> tuple[str, list[Task]]:
         memory = self.tools.recall_summary(directive_text)
         prompt = f"DIRECTION FROM HUMAN:\n{directive_text}"
         if memory:
             prompt += f"\n\n{memory}"
-        raw = self.llm.generate_json(SYSTEM, prompt, PLAN_SCHEMA)
+        cfg = self.config.get(Department.CEO)
+        raw = self.llm.generate_json(
+            SYSTEM, prompt, PLAN_SCHEMA, model=cfg.model, effort=cfg.effort
+        )
         if raw is None:
             raw = self._simulate(directive_text)
 

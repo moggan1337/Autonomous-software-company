@@ -46,3 +46,30 @@ def test_autopilot_endpoints_toggle_state():
         assert client.get("/api/state").json()["autopilot"] is True
         assert client.post("/api/world/stop").json()["autopilot"] is False
         assert client.get("/api/state").json()["autopilot"] is False
+
+
+def test_approvals_endpoints_toggle_state():
+    with TestClient(app) as client:
+        assert client.post("/api/approvals/start").json()["approvals_enabled"] is True
+        assert client.get("/api/state").json()["approvals_enabled"] is True
+        assert client.post("/api/approvals/stop").json()["approvals_enabled"] is False
+
+
+def test_agent_config_endpoint_updates():
+    with TestClient(app) as client:
+        res = client.put("/api/agents/support", json={"instructions": "Be terse.", "enabled": True})
+        assert res.status_code == 200
+        assert res.json()["agent"]["instructions"] == "Be terse."
+        agents = client.get("/api/agents").json()["agents"]
+        support = next(a for a in agents if a["department"] == "support")
+        assert support["instructions"] == "Be terse."
+
+
+def test_unknown_department_is_404():
+    with TestClient(app) as client:
+        assert client.put("/api/agents/nope", json={"enabled": False}).status_code == 404
+
+
+def test_approve_missing_task_is_404():
+    with TestClient(app) as client:
+        assert client.post("/api/tasks/task_doesnotexist/approve").status_code == 404

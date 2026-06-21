@@ -48,6 +48,19 @@ And the company is **alive**, not just reactive:
   Server-Sent Events (no polling); you watch each agent start "thinking" and
   hand work off the instant it happens.
 
+And the human stays **in control** when they want to be:
+
+- **Approval gates** — turn them on and outward-facing or hard-to-reverse work
+  (sales, marketing, anything that sends/publishes/deploys/deletes) pauses for
+  your sign-off. Approve or reject each item from the dashboard; everything else
+  still flows autonomously.
+- **Agent configuration** — click any department to tune its reasoning effort,
+  model, and extra instructions, or disable it entirely. Changes take effect on
+  the next task and persist across restarts.
+- **Cost & budget tracking** — every completed task records estimated token
+  usage and cost; the dashboard shows live spend against a budget and the
+  company raises an alert when the budget is exceeded.
+
 ## What the agents do
 
 | Department | Responsibility |
@@ -96,11 +109,13 @@ The single human seat. From `http://127.0.0.1:8000` you can:
 
 - **Give a direction** in the CEO console (or click an example).
 - Flip on **Autopilot** to let the world send inbound work the company handles itself.
+- Flip on **Approvals** to gate risky work, then approve/reject from the queue.
+- Click any **department** to configure its effort, model, instructions, or disable it.
 - Watch a live **reasoning ticker** as agents start working (streamed, not polled).
 - Watch every **department** light up as it works (live status).
 - Follow the **activity feed** of delegations, work, and hand-offs in real time.
 - Open any **deliverable** to read what an agent produced.
-- See company-wide **metrics** (tasks, in progress, done, rework, deliverables).
+- See company-wide **metrics** (tasks, in progress, awaiting, rework, est. cost).
 
 ## Configuration
 
@@ -113,6 +128,7 @@ All via environment variables (or a `.env` file — see `.env.example`):
 | `COMPANY_EFFORT` | `high` | Reasoning effort: `low`…`max`. |
 | `COMPANY_DB` | `company.db` | SQLite state file. |
 | `COMPANY_SIMULATE` | `0` | Set `1` to force simulation even with a key. |
+| `COMPANY_BUDGET` | `25` | Spend budget (USD) before the company raises a budget alert. |
 
 ## Architecture
 
@@ -125,7 +141,8 @@ company/
   tools.py           real tools: company memory (recall), live metrics, code validation
   bus.py             thread-safe pub/sub bridging the worker thread to SSE subscribers
   world.py           autopilot: generates inbound tickets/leads/ideas on a timer
-  orchestrator.py    the engine: delegation, work loop, bounded cascade + rework, background worker
+  agentconfig.py     human-tunable per-department config (model/effort/instructions/enabled)
+  orchestrator.py    the engine: delegation, work loop, rework, approvals, cost, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
     base.py          shared agent contract: summary + artifact + cross-dept hand-offs
@@ -149,11 +166,14 @@ loop. A directive auto-closes when all its tasks are done.
 |---|---|---|
 | `GET` | `/` | The dashboard. |
 | `GET` | `/api/health` | Liveness + current mode. |
-| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, autopilot). |
+| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, approvals, agents, cost). |
 | `GET` | `/api/stream` | Server-Sent Events: live activity + agent reasoning. |
 | `POST` | `/api/directive` | Submit a human direction: `{"text": "..."}`. |
-| `POST` | `/api/world/start` | Turn autopilot on (the world generates inbound work). |
-| `POST` | `/api/world/stop` | Turn autopilot off. |
+| `POST` | `/api/world/start` · `/stop` | Turn autopilot on/off. |
+| `POST` | `/api/approvals/start` · `/stop` | Turn approval gating on/off. |
+| `POST` | `/api/tasks/{id}/approve` · `/reject` | Decide on a task awaiting approval. |
+| `GET` | `/api/agents` | List per-department agent configs. |
+| `PUT` | `/api/agents/{department}` | Update a department's model/effort/instructions/enabled. |
 
 ## Tests
 
@@ -162,13 +182,13 @@ pip install pytest httpx
 python -m pytest
 ```
 
-The suite (28 tests) runs entirely offline (forced simulation mode, isolated
+The suite (40 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
-autopilot (inbound generation, end-to-end handling), and the cross-thread event
-bus that powers the live stream.
+autopilot, the cross-thread event bus, and the human-in-the-loop controls
+(approval gating, agent config persistence, cost tracking, and budget alerts).
 
 ## Design notes
 

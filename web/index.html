@@ -22,7 +22,10 @@
     <section class="console">
       <div class="console-head">
         <h2>CEO console</h2>
-        <button id="autopilot-btn" class="autopilot" type="button">Autopilot: off</button>
+        <div class="toggles">
+          <button id="autopilot-btn" class="toggle-btn" type="button">Autopilot: off</button>
+          <button id="approvals-btn" class="toggle-btn" type="button">Approvals: off</button>
+        </div>
       </div>
       <p class="hint">Give the company a direction — or flip on Autopilot and let the world send inbound work (tickets, leads, ideas) for the company to handle on its own.</p>
       <form id="directive-form">
@@ -36,8 +39,13 @@
 
     <section class="metrics" id="metrics"></section>
 
+    <section class="approvals" id="approvals-section" hidden>
+      <h2>Awaiting your approval</h2>
+      <ul id="approvals-list"></ul>
+    </section>
+
     <section class="departments">
-      <h2>Departments</h2>
+      <h2>Departments <span class="sub">— click a card to configure</span></h2>
       <div class="dept-grid" id="dept-grid"></div>
     </section>
 
@@ -58,6 +66,32 @@
       <button class="modal-close" id="modal-close">×</button>
       <h3 id="modal-title"></h3>
       <pre id="modal-content"></pre>
+    </div>
+  </div>
+
+  <div class="modal" id="config-modal" hidden>
+    <div class="modal-body">
+      <button class="modal-close" id="config-close">×</button>
+      <h3 id="config-title"></h3>
+      <p class="hint">Tune this agent. Model/effort apply on Claude; instructions are appended to its system prompt; disabling it stops it picking up work.</p>
+      <label class="cfg-row"><input type="checkbox" id="cfg-enabled" /> Department enabled</label>
+      <label class="cfg-row">Reasoning effort
+        <select id="cfg-effort">
+          <option value="">(company default)</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+          <option value="max">max</option>
+        </select>
+      </label>
+      <label class="cfg-row">Model override
+        <input type="text" id="cfg-model" placeholder="(company default)" />
+      </label>
+      <label class="cfg-row">Extra instructions
+        <textarea id="cfg-instructions" rows="4" placeholder="e.g. Always cite sources; keep replies under 120 words."></textarea>
+      </label>
+      <button id="cfg-save" type="button">Save changes</button>
     </div>
   </div>
 

@@ -26,6 +26,7 @@ def company(tmp_path) -> Company:
         effort="high",
         db_path=str(tmp_path / "company.db"),
         force_simulate=True,
+        budget=25.0,
     )
     c = Company(settings=settings)
     yield c

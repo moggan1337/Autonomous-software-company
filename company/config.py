@@ -30,6 +30,24 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+# Approximate USD pricing per 1M tokens (input, output) by model, for the
+# cost ledger. Used to estimate spend; exact billing comes from the API.
+PRICING: dict[str, tuple[float, float]] = {
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+_DEFAULT_PRICE = (5.0, 25.0)
+
+
+def cost_for(model: str, input_tokens: int, output_tokens: int) -> float:
+    p_in, p_out = PRICING.get(model, _DEFAULT_PRICE)
+    return (input_tokens * p_in + output_tokens * p_out) / 1_000_000
+
+
 @dataclass(frozen=True)
 class Settings:
     api_key: str | None
@@ -37,6 +55,7 @@ class Settings:
     effort: str
     db_path: str
     force_simulate: bool
+    budget: float
 
     @property
     def simulate(self) -> bool:
@@ -51,6 +70,7 @@ def load_settings() -> Settings:
         effort=os.environ.get("COMPANY_EFFORT", "high"),
         db_path=os.environ.get("COMPANY_DB", str(ROOT / "company.db")),
         force_simulate=os.environ.get("COMPANY_SIMULATE", "0") == "1",
+        budget=float(os.environ.get("COMPANY_BUDGET", "25") or 25),
     )
 
 

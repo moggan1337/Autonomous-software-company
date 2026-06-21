@@ -36,16 +36,19 @@ class LLMClient:
     def available(self) -> bool:
         return self._client is not None
 
-    def generate(self, system: str, user: str, max_tokens: int = 4000) -> str | None:
+    def generate(
+        self, system: str, user: str, max_tokens: int = 4000,
+        model: str | None = None, effort: str | None = None,
+    ) -> str | None:
         """Return Claude's text response, or ``None`` to signal "simulate instead"."""
         if not self.available:
             return None
         try:
             resp = self._client.messages.create(
-                model=self.settings.model,
+                model=model or self.settings.model,
                 max_tokens=max_tokens,
                 thinking={"type": "adaptive"},
-                output_config={"effort": self.settings.effort},
+                output_config={"effort": effort or self.settings.effort},
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
@@ -58,18 +61,19 @@ class LLMClient:
             return None
 
     def generate_json(
-        self, system: str, user: str, schema: dict, max_tokens: int = 4000
+        self, system: str, user: str, schema: dict, max_tokens: int = 4000,
+        model: str | None = None, effort: str | None = None,
     ) -> dict | None:
         """Return a schema-validated dict from Claude, or ``None`` to simulate."""
         if not self.available:
             return None
         try:
             resp = self._client.messages.create(
-                model=self.settings.model,
+                model=model or self.settings.model,
                 max_tokens=max_tokens,
                 thinking={"type": "adaptive"},
                 output_config={
-                    "effort": self.settings.effort,
+                    "effort": effort or self.settings.effort,
                     "format": {"type": "json_schema", "schema": schema},
                 },
                 system=system,

@@ -18,11 +18,13 @@ import threading
 import time
 from pathlib import Path
 
+from .agentconfig import ConfigRegistry
 from .agents import AGENT_CLASSES, CEOAgent
 from .bus import EventBus
-from .config import SETTINGS, Settings
+from .config import SETTINGS, Settings, cost_for
 from .db import Database
 from .llm import LLMClient
+from .models import _id, now
 from .world import World
 from .models import (
     Department,
@@ -42,6 +44,21 @@ MAX_REWORK = 2  # how many times QA may send a feature back before it ships anyw
 
 _QA_PREFIXES = ("Re-verify ", "Verify ", "Re-test ", "Test ")
 
+# Outward-facing / hard-to-reverse work that a human should sign off on when
+# approval gating is enabled.
+_APPROVAL_DEPARTMENTS = {Department.SALES, Department.MARKETING}
+_APPROVAL_KEYWORDS = (
+    "send", "publish", "deploy", "release", "launch", "delete", "refund",
+    "email", "outreach", "campaign", "post ", "announce",
+)
+
+
+def _needs_approval(task: Task) -> bool:
+    if task.department in _APPROVAL_DEPARTMENTS:
+        return True
+    text = f"{task.title} {task.description}".lower()
+    return any(k in text for k in _APPROVAL_KEYWORDS)
+
 
 def _feature_name(title: str) -> str:
     for p in _QA_PREFIXES:
@@ -57,11 +74,17 @@ class Company:
         self.llm = LLMClient(self.settings)
         workspace = Path(self.settings.db_path).resolve().parent / "workspace"
         self.tools = ToolBox(self.db, workspace)
-        self.ceo = CEOAgent(self.llm, self.tools)
-        self.agents = {dept: cls(self.llm, self.tools) for dept, cls in AGENT_CLASSES.items()}
+        self.config = ConfigRegistry(self.db)
+        self.ceo = CEOAgent(self.llm, self.tools, self.config)
+        self.agents = {
+            dept: cls(self.llm, self.tools, self.config)
+            for dept, cls in AGENT_CLASSES.items()
+        }
         self.step_delay = step_delay
         self.bus = EventBus()
         self.world = World(self.submit_directive)
+        self.approvals_enabled = False
+        self._budget_warned = False
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
 
@@ -88,9 +111,17 @@ class Company:
     # ---- work loop --------------------------------------------------------
     def process_one(self, department: Department) -> bool:
         """Claim and complete a single task for a department. Returns True if it did."""
+        if not self.config.get(department).enabled:
+            return False  # human disabled this department; its work waits
         task = self.db.claim_next_task(department)
         if task is None:
             return False
+
+        # Human-in-the-loop gate: park risky work until a human signs off.
+        if self.approvals_enabled and _needs_approval(task) and not task.approved:
+            self.db.update_task(task.id, status=TaskStatus.AWAITING_APPROVAL)
+            self._log(department, f"Awaiting human approval: {task.title}", "approval")
+            return True
 
         agent = self.agents[department]
         depth = self._depth(task)
@@ -104,6 +135,7 @@ class Company:
             return True
 
         self.db.update_task(task.id, status=TaskStatus.DONE, result=result.summary)
+        self._record_usage(task, result)
         if result.artifact:
             self.db.add_artifact(result.artifact)
             self._log(
@@ -208,6 +240,56 @@ class Company:
         self.world.stop()
         self._log(Department.CEO, "Autopilot OFF — awaiting human direction.", "info")
 
+    # ---- human-in-the-loop ------------------------------------------------
+    def set_approvals(self, enabled: bool) -> None:
+        self.approvals_enabled = enabled
+        state = "ON — risky work now waits for human sign-off" if enabled else "OFF"
+        self._log(Department.CEO, f"Approval gates {state}.", "info")
+
+    def approve_task(self, task_id: str) -> bool:
+        task = self.db.get_task(task_id)
+        if task is None or task.status != TaskStatus.AWAITING_APPROVAL:
+            return False
+        self.db.update_task(task_id, status=TaskStatus.PENDING, approved=True)
+        self._log(task.department, f"Human APPROVED: {task.title}", "approval")
+        return True
+
+    def reject_task(self, task_id: str) -> bool:
+        task = self.db.get_task(task_id)
+        if task is None or task.status != TaskStatus.AWAITING_APPROVAL:
+            return False
+        self.db.update_task(task_id, status=TaskStatus.BLOCKED, result="Rejected by human")
+        self._log(task.department, f"Human REJECTED: {task.title}", "approval")
+        self._maybe_close_directive(task.directive_id)
+        return True
+
+    def update_agent_config(self, department: Department, **fields):
+        cfg = self.config.update(department, **fields)
+        self._log(department, f"Configuration updated by human ({department.title}).", "info")
+        return cfg
+
+    # ---- cost ledger ------------------------------------------------------
+    def _record_usage(self, task: Task, result) -> None:
+        """Estimate token usage + cost for a completed task and log it."""
+        model = self.config.get(task.department).model or self.settings.model
+        in_chars = len(task.title) + len(task.description) + 800  # system + context baseline
+        out_chars = len(result.summary) + (len(result.artifact.content) if result.artifact else 0)
+        input_tokens = max(in_chars // 4, 1)
+        output_tokens = max(out_chars // 4, 1)
+        cost = cost_for(model, input_tokens, output_tokens)
+        self.db.add_usage(
+            _id("use"), task.id, task.directive_id, task.department.value,
+            input_tokens, output_tokens, cost, now(),
+        )
+        total = self.db.cost_summary()["total_cost"]
+        if total > self.settings.budget and not self._budget_warned:
+            self._budget_warned = True
+            self._log(
+                Department.CEO,
+                f"Budget alert: estimated spend ${total:.2f} exceeded the ${self.settings.budget:.2f} budget.",
+                "error",
+            )
+
     def _loop(self) -> None:
         while self._running.is_set():
             if self.tick() == 0:
@@ -217,21 +299,37 @@ class Company:
     def snapshot(self) -> dict:
         tasks = [t.to_dict() for t in self.db.get_tasks()]
         counts = self.db.count_tasks_by_status()
-        per_dept = {d.value: {"pending": 0, "in_progress": 0, "done": 0} for d in WORKER_DEPARTMENTS}
+        configs = {c["department"]: c for c in self.config.all()}
+        per_dept = {
+            d.value: {"pending": 0, "in_progress": 0, "done": 0, "awaiting_approval": 0}
+            for d in WORKER_DEPARTMENTS
+        }
         for t in tasks:
             bucket = per_dept.get(t["department"])
             if bucket and t["status"] in bucket:
                 bucket[t["status"]] += 1
+        cost = self.db.cost_summary()
+        awaiting = [t for t in tasks if t["status"] == TaskStatus.AWAITING_APPROVAL.value]
         return {
             "mode": "simulation" if self.settings.simulate else "claude",
             "model": self.settings.model,
             "autopilot": self.world.running,
+            "approvals_enabled": self.approvals_enabled,
+            "budget": self.settings.budget,
             "directives": self.db.get_directives(),
             "tasks": tasks,
             "artifacts": self.db.get_artifacts(),
             "events": self.db.get_events(120),
+            "approvals": awaiting,
+            "agents": self.config.all(),
+            "cost": cost,
             "departments": [
-                {"id": d.value, "title": d.title, **per_dept[d.value]}
+                {
+                    "id": d.value,
+                    "title": d.title,
+                    "enabled": configs[d.value]["enabled"],
+                    **per_dept[d.value],
+                }
                 for d in WORKER_DEPARTMENTS
             ],
             "metrics": {
@@ -240,8 +338,10 @@ class Company:
                 "in_progress": counts.get("in_progress", 0),
                 "pending": counts.get("pending", 0),
                 "blocked": counts.get("blocked", 0),
+                "awaiting_approval": len(awaiting),
                 "artifacts": len(self.db.get_artifacts()),
                 "rework": sum(1 for t in tasks if t["rework_count"] > 0),
+                "cost": cost["total_cost"],
             },
         }
 

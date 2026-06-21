@@ -69,14 +69,45 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 }
 .hint { color: var(--muted); font-size: 13px; margin-top: -4px; }
 .console-head { display: flex; align-items: center; justify-content: space-between; }
-.autopilot {
+.toggles { display: flex; gap: 8px; }
+.toggle-btn {
   background: var(--panel-2);
   color: var(--muted);
   border: 1px solid var(--border);
   font-size: 12px;
   padding: 7px 14px;
 }
-.autopilot.on { background: rgba(63,185,80,.15); color: var(--green); border-color: var(--green); }
+.toggle-btn.on { background: rgba(63,185,80,.15); color: var(--green); border-color: var(--green); }
+.sub { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px; }
+
+.approvals { background: rgba(210,153,34,.08); border: 1px solid var(--amber); border-radius: 12px; padding: 16px; }
+.approvals h2 { color: var(--amber); }
+.approvals ul { list-style: none; margin: 0; padding: 0; }
+.approvals li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 8px; background: var(--panel);
+}
+.approvals .ap-meta { font-size: 12px; color: var(--muted); }
+.approvals .ap-actions { display: flex; gap: 8px; }
+.btn-approve { background: var(--green); color: #04210b; padding: 7px 14px; }
+.btn-reject { background: var(--red); color: #2a0606; padding: 7px 14px; }
+
+.metric.over .num { color: var(--red); }
+
+.dept-card { cursor: pointer; }
+.dept-card:hover { border-color: var(--accent); }
+.dept-card.disabled { opacity: .55; }
+.dept-card.disabled .dot { background: var(--red); }
+.dept-card .badge-off { font-size: 10px; color: var(--red); margin-left: 6px; }
+
+.cfg-row { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; font-size: 13px; color: var(--muted); }
+.cfg-row input[type=text], .cfg-row select, .cfg-row textarea {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 8px; font-size: 14px; font-family: inherit;
+}
+.cfg-row input[type=checkbox] { width: 16px; height: 16px; }
+label.cfg-row:has(input[type=checkbox]) { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 .ticker {
   margin-top: 12px;
   min-height: 20px;

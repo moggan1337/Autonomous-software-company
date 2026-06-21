@@ -50,6 +50,7 @@ WORKER_DEPARTMENTS = [d for d in Department if d != Department.CEO]
 class TaskStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    AWAITING_APPROVAL = "awaiting_approval"
     DONE = "done"
     BLOCKED = "blocked"
 
@@ -74,6 +75,7 @@ class Task:
     created_by: Department = Department.CEO
     result: str = ""
     rework_count: int = 0
+    approved: bool = False
     created_at: float = field(default_factory=now)
     updated_at: float = field(default_factory=now)
 
@@ -118,6 +120,23 @@ class Directive:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["status"] = self.status.value
+        return d
+
+
+@dataclass
+class AgentConfig:
+    """Human-tunable settings for one department agent."""
+
+    department: Department
+    model: str | None = None       # None -> use the company default
+    effort: str | None = None      # None -> use the company default
+    instructions: str = ""         # extra guidance appended to the system prompt
+    enabled: bool = True
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["department"] = self.department.value
+        d["title"] = self.department.title
         return d
 
 

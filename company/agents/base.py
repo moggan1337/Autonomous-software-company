@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..agentconfig import ConfigRegistry
 from ..llm import LLMClient
 from ..models import (
     Artifact,
@@ -81,18 +82,21 @@ class BaseAgent:
     department: Department = Department.SUPPORT
     role_description: str = ""
 
-    def __init__(self, llm: LLMClient, tools: ToolBox) -> None:
+    def __init__(self, llm: LLMClient, tools: ToolBox, config: ConfigRegistry) -> None:
         self.llm = llm
         self.tools = tools
+        self.config = config
 
     # ---- public API -------------------------------------------------------
     def work(self, task: Task, allow_followups: bool = True) -> WorkResult:
         """Process a task, preferring Claude and falling back to simulation."""
+        cfg = self.config.get(self.department)
         context = self.tools.recall(
             f"{task.title} {task.description}", k=3, exclude_task=task.id
         )
         raw = self.llm.generate_json(
-            self.system_prompt(), self._user_prompt(task, context), WORKER_SCHEMA
+            self.system_prompt(), self._user_prompt(task, context), WORKER_SCHEMA,
+            model=cfg.model, effort=cfg.effort,
         )
         if raw is None:
             raw = self.simulate(task, context)
@@ -100,7 +104,7 @@ class BaseAgent:
 
     # ---- to be specialized ------------------------------------------------
     def system_prompt(self) -> str:
-        return (
+        base = (
             f"You are the {self.department.title} agent in an autonomous software "
             f"company where AI agents run all operations and a human only sets "
             f"direction. {self.role_description}\n\n"
@@ -111,6 +115,10 @@ class BaseAgent:
             "create. Set 'verdict' to null unless you are QA. Respond strictly in "
             "the required JSON shape."
         )
+        extra = self.config.get(self.department).instructions.strip()
+        if extra:
+            base += f"\n\nADDITIONAL INSTRUCTIONS FROM LEADERSHIP:\n{extra}"
+        return base
 
     def simulate(self, task: Task, context: list[dict]) -> dict:  # pragma: no cover
         """Deterministic stand-in used when Claude is unavailable."""
