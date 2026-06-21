@@ -112,6 +112,7 @@ class Directive:
     id: str = field(default_factory=lambda: _id("dir"))
     status: TaskStatus = TaskStatus.PENDING
     summary: str = ""
+    source: str = "human"  # "human" | "world" (autopilot)
     created_at: float = field(default_factory=now)
 
     def to_dict(self) -> dict:

@@ -68,6 +68,34 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
   padding: 20px;
 }
 .hint { color: var(--muted); font-size: 13px; margin-top: -4px; }
+.console-head { display: flex; align-items: center; justify-content: space-between; }
+.autopilot {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  padding: 7px 14px;
+}
+.autopilot.on { background: rgba(63,185,80,.15); color: var(--green); border-color: var(--green); }
+.ticker {
+  margin-top: 12px;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--accent);
+  font-style: italic;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.ticker.show { opacity: 1; }
+.src-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  background: rgba(163,113,247,.18);
+  color: var(--purple);
+}
 
 #directive-form { display: flex; gap: 10px; margin-top: 12px; }
 #directive-input {

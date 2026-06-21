@@ -9,6 +9,9 @@ const EXAMPLES = [
 ];
 
 let artifactsById = {};
+let autopilot = false;
+let refreshTimer = null;
+let tickerTimer = null;
 
 async function fetchState() {
   try {
@@ -16,8 +19,51 @@ async function fetchState() {
     if (!res.ok) return;
     render(await res.json());
   } catch (e) {
-    /* transient; next poll will retry */
+    /* transient; the fallback poll or next event will retry */
   }
+}
+
+// Coalesce bursts of stream events into one state refresh.
+function scheduleRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    fetchState();
+  }, 250);
+}
+
+function connectStream() {
+  const es = new EventSource("/api/stream");
+  es.onmessage = (msg) => {
+    let item;
+    try {
+      item = JSON.parse(msg.data);
+    } catch {
+      return;
+    }
+    if (item.type === "thinking") {
+      showTicker(`${item.data.department}: ${item.data.message}`);
+    } else if (item.type === "event") {
+      scheduleRefresh();
+    }
+  };
+  es.onerror = () => {
+    /* EventSource auto-reconnects; the fallback poll covers any gap. */
+  };
+}
+
+function showTicker(text) {
+  const el = document.getElementById("ticker");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(tickerTimer);
+  tickerTimer = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+async function toggleAutopilot() {
+  const path = autopilot ? "/api/world/stop" : "/api/world/start";
+  await fetch(path, { method: "POST" });
+  fetchState();
 }
 
 async function submitDirective(text) {
@@ -31,10 +77,18 @@ async function submitDirective(text) {
 
 function render(state) {
   renderMode(state);
+  renderAutopilot(state);
   renderMetrics(state.metrics);
   renderDepartments(state.departments);
   renderFeed(state.events);
   renderArtifacts(state.artifacts);
+}
+
+function renderAutopilot(state) {
+  autopilot = !!state.autopilot;
+  const btn = document.getElementById("autopilot-btn");
+  btn.textContent = `Autopilot: ${autopilot ? "on" : "off"}`;
+  btn.classList.toggle("on", autopilot);
 }
 
 function renderMode(state) {
@@ -146,6 +200,8 @@ function init() {
     input.value = "";
   });
 
+  document.getElementById("autopilot-btn").addEventListener("click", toggleAutopilot);
+
   document.getElementById("modal-close").addEventListener("click", () => {
     document.getElementById("artifact-modal").hidden = true;
   });
@@ -154,7 +210,8 @@ function init() {
   });
 
   fetchState();
-  setInterval(fetchState, 1500);
+  connectStream();             // live push of activity + agent reasoning
+  setInterval(fetchState, 5000); // slow fallback in case the stream drops
 }
 
 document.addEventListener("DOMContentLoaded", init);

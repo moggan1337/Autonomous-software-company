@@ -38,6 +38,16 @@ The agents are also **grounded and accountable**, not just generative:
   (`MAX_REWORK`), so it always terminates — a feature ships once it passes or the
   rework budget is exhausted.
 
+And the company is **alive**, not just reactive:
+
+- **Autopilot (the world)** — flip it on and a background world generates inbound
+  work on its own — support tickets, sales leads, product ideas, analytics
+  requests — which the company handles with no human input at all. This is the
+  full vision: one person watches a company run itself.
+- **Real-time dashboard** — activity and agent reasoning are pushed live over
+  Server-Sent Events (no polling); you watch each agent start "thinking" and
+  hand work off the instant it happens.
+
 ## What the agents do
 
 | Department | Responsibility |
@@ -85,10 +95,12 @@ python run.py serve
 The single human seat. From `http://127.0.0.1:8000` you can:
 
 - **Give a direction** in the CEO console (or click an example).
+- Flip on **Autopilot** to let the world send inbound work the company handles itself.
+- Watch a live **reasoning ticker** as agents start working (streamed, not polled).
 - Watch every **department** light up as it works (live status).
 - Follow the **activity feed** of delegations, work, and hand-offs in real time.
 - Open any **deliverable** to read what an agent produced.
-- See company-wide **metrics** (tasks, in progress, done, deliverables).
+- See company-wide **metrics** (tasks, in progress, done, rework, deliverables).
 
 ## Configuration
 
@@ -111,6 +123,8 @@ company/
   db.py              SQLite persistence (atomic task claiming, snapshots, rework tracking)
   llm.py             Claude wrapper (adaptive thinking, structured outputs, graceful fallback)
   tools.py           real tools: company memory (recall), live metrics, code validation
+  bus.py             thread-safe pub/sub bridging the worker thread to SSE subscribers
+  world.py           autopilot: generates inbound tickets/leads/ideas on a timer
   orchestrator.py    the engine: delegation, work loop, bounded cascade + rework, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
@@ -135,8 +149,11 @@ loop. A directive auto-closes when all its tasks are done.
 |---|---|---|
 | `GET` | `/` | The dashboard. |
 | `GET` | `/api/health` | Liveness + current mode. |
-| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics). |
+| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, autopilot). |
+| `GET` | `/api/stream` | Server-Sent Events: live activity + agent reasoning. |
 | `POST` | `/api/directive` | Submit a human direction: `{"text": "..."}`. |
+| `POST` | `/api/world/start` | Turn autopilot on (the world generates inbound work). |
+| `POST` | `/api/world/stop` | Turn autopilot off. |
 
 ## Tests
 
@@ -145,11 +162,13 @@ pip install pytest httpx
 python -m pytest
 ```
 
-The suite (20 tests) runs entirely offline (forced simulation mode, isolated
+The suite (28 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
-HTTP API, the tools (memory recall, live metrics, code validation), and the QA
-rework loop (rejection → fix → re-verify, bounded and terminating).
+HTTP API, the tools (memory recall, live metrics, code validation), the QA
+rework loop (rejection → fix → re-verify, bounded and terminating), the world
+autopilot (inbound generation, end-to-end handling), and the cross-thread event
+bus that powers the live stream.
 
 ## Design notes
 

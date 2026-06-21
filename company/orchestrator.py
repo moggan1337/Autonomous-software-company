@@ -19,9 +19,11 @@ import time
 from pathlib import Path
 
 from .agents import AGENT_CLASSES, CEOAgent
+from .bus import EventBus
 from .config import SETTINGS, Settings
 from .db import Database
 from .llm import LLMClient
+from .world import World
 from .models import (
     Department,
     Directive,
@@ -58,14 +60,19 @@ class Company:
         self.ceo = CEOAgent(self.llm, self.tools)
         self.agents = {dept: cls(self.llm, self.tools) for dept, cls in AGENT_CLASSES.items()}
         self.step_delay = step_delay
+        self.bus = EventBus()
+        self.world = World(self.submit_directive)
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
 
     # ---- human interface --------------------------------------------------
-    def submit_directive(self, text: str) -> Directive:
-        """Accept a human direction and have the CEO delegate the first tasks."""
-        directive = self.db.add_directive(Directive(text=text, status=TaskStatus.IN_PROGRESS))
-        self._log(Department.CEO, f"New direction received: {text}", "info")
+    def submit_directive(self, text: str, source: str = "human") -> Directive:
+        """Accept a direction (from a human or the world) and have the CEO delegate it."""
+        directive = self.db.add_directive(
+            Directive(text=text, status=TaskStatus.IN_PROGRESS, source=source)
+        )
+        origin = "Inbound" if source == "world" else "New direction"
+        self._log(Department.CEO, f"{origin} received: {text}", "info")
         summary, tasks = self.ceo.plan(text, directive.id)
         self.db.update_directive(directive.id, summary=summary)
         directive.summary = summary
@@ -87,6 +94,7 @@ class Company:
 
         agent = self.agents[department]
         depth = self._depth(task)
+        self._think(department, f"{department.title} is working on '{task.title}'…")
         self._log(department, f"Working: {task.title}", "work")
         try:
             result = agent.work(task, allow_followups=depth < MAX_DEPTH)
@@ -186,9 +194,19 @@ class Company:
         log.info("Company background worker started.")
 
     def stop(self) -> None:
+        self.world.stop()
         self._running.clear()
         if self._thread:
             self._thread.join(timeout=2)
+
+    def start_world(self) -> None:
+        """Turn on autopilot: the world generates inbound work on its own."""
+        self.world.start()
+        self._log(Department.CEO, "Autopilot ON — the company now runs itself.", "info")
+
+    def stop_world(self) -> None:
+        self.world.stop()
+        self._log(Department.CEO, "Autopilot OFF — awaiting human direction.", "info")
 
     def _loop(self) -> None:
         while self._running.is_set():
@@ -207,6 +225,7 @@ class Company:
         return {
             "mode": "simulation" if self.settings.simulate else "claude",
             "model": self.settings.model,
+            "autopilot": self.world.running,
             "directives": self.db.get_directives(),
             "tasks": tasks,
             "artifacts": self.db.get_artifacts(),
@@ -247,5 +266,12 @@ class Company:
             self._log(Department.CEO, "Direction complete — all work finished.", "info")
 
     def _log(self, department: Department, message: str, kind: str) -> None:
-        self.db.add_event(Event(department=department, message=message, kind=kind))
+        event = self.db.add_event(Event(department=department, message=message, kind=kind))
+        self.bus.publish({"type": "event", "data": event.to_dict()})
         log.info("[%s] %s", department.value, message)
+
+    def _think(self, department: Department, message: str) -> None:
+        """Stream a transient 'reasoning' line for liveness (not persisted)."""
+        self.bus.publish(
+            {"type": "thinking", "data": {"department": department.value, "message": message}}
+        )

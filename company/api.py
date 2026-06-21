@@ -6,12 +6,14 @@ The background worker runs the company continuously; the dashboard polls
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -28,6 +30,7 @@ company = Company(step_delay=0.25)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    company.bus.bind_loop(asyncio.get_running_loop())
     company.start()
     try:
         yield
@@ -61,6 +64,39 @@ def state() -> JSONResponse:
 def submit_directive(payload: DirectiveIn) -> JSONResponse:
     directive = company.submit_directive(payload.text.strip())
     return JSONResponse({"directive": directive.to_dict()})
+
+
+@app.post("/api/world/start")
+def world_start() -> dict:
+    company.start_world()
+    return {"autopilot": True}
+
+
+@app.post("/api/world/stop")
+def world_stop() -> dict:
+    company.stop_world()
+    return {"autopilot": False}
+
+
+@app.get("/api/stream")
+async def stream() -> StreamingResponse:
+    """Server-Sent Events: push activity and agent reasoning to the dashboard live."""
+
+    async def event_stream():
+        q = company.bus.subscribe()
+        try:
+            yield 'data: {"type": "hello"}\n\n'
+            while True:
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=15)
+                    yield f"data: {json.dumps(item)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"  # comment frame keeps the connection open
+        finally:
+            company.bus.unsubscribe(q)
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
 if WEB_DIR.exists():

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS directives (
     text TEXT NOT NULL,
     status TEXT NOT NULL,
     summary TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'human',
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS tasks (
@@ -84,8 +85,8 @@ class Database:
     def add_directive(self, d: Directive) -> Directive:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO directives (id, text, status, summary, created_at) VALUES (?,?,?,?,?)",
-                (d.id, d.text, d.status.value, d.summary, d.created_at),
+                "INSERT INTO directives (id, text, status, summary, source, created_at) VALUES (?,?,?,?,?,?)",
+                (d.id, d.text, d.status.value, d.summary, d.source, d.created_at),
             )
             self._conn.commit()
         return d
