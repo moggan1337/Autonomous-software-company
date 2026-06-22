@@ -22,9 +22,27 @@ function withCo(path) {
   return path + (path.includes("?") ? "&" : "?") + "company=" + encodeURIComponent(currentCompany);
 }
 
+function authHeaders() {
+  const t = localStorage.getItem("asc_token");
+  return t ? { Authorization: "Bearer " + t } : {};
+}
+
+// Auth-aware GET: attaches a stored token, prompts once on 401, then retries.
+async function apiGet(path) {
+  let res = await fetch(path, { headers: authHeaders() });
+  if (res.status === 401) {
+    const t = prompt("This deployment requires an API token:");
+    if (t) {
+      localStorage.setItem("asc_token", t);
+      res = await fetch(path, { headers: authHeaders() });
+    }
+  }
+  return res;
+}
+
 async function fetchState() {
   try {
-    const res = await fetch(withCo("/api/state"));
+    const res = await apiGet(withCo("/api/state"));
     if (!res.ok) return;
     render(await res.json());
   } catch (e) {
@@ -34,7 +52,7 @@ async function fetchState() {
 
 async function loadCompanies() {
   try {
-    const res = await fetch("/api/companies");
+    const res = await apiGet("/api/companies");
     if (!res.ok) return;
     const companies = (await res.json()).companies || [];
     const sel = document.getElementById("company-select");
@@ -67,7 +85,11 @@ function scheduleRefresh() {
 }
 
 function connectStream() {
-  const es = new EventSource(withCo("/api/stream"));
+  // EventSource can't set headers, so pass the token (if any) as a query param.
+  let url = withCo("/api/stream");
+  const t = localStorage.getItem("asc_token");
+  if (t) url += "&token=" + encodeURIComponent(t);
+  const es = new EventSource(url);
   eventSource = es;
   es.onmessage = (msg) => {
     let item;
@@ -164,7 +186,7 @@ function renderDirectives(directives) {
 }
 
 async function openDirective(id) {
-  const res = await fetch(withCo(`/api/directives/${id}`));
+  const res = await apiGet(withCo(`/api/directives/${id}`));
   if (!res.ok) return;
   const d = await res.json();
   document.getElementById("detail-title").textContent = d.directive.text;
@@ -205,7 +227,7 @@ function taskTree(tasks, artifacts) {
 
 async function openCustomer(id) {
   if (!id) return;
-  const res = await fetch(withCo(`/api/customers/${id}`));
+  const res = await apiGet(withCo(`/api/customers/${id}`));
   if (!res.ok) return;
   const d = await res.json();
   const c = d.customer;

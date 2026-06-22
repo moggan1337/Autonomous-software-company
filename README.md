@@ -85,9 +85,10 @@ And it's **production-ready**:
   deliverables are snapshotted after every completed task and charted live on the
   dashboard. Revenue and customers read straight off the CRM (won deals, active
   customers), so the charts are backed by real entities, not a formula.
-- **Optional auth** — set `COMPANY_API_TOKEN` and state-changing requests require
-  the token (reads stay open so the dashboard still works); unset, everything is
-  open for local use.
+- **Optional auth** — set `COMPANY_API_TOKEN` and every `/api` request (reads
+  included, so tenant data stays private) requires the token via a bearer header,
+  `X-API-Token`, or `?token=` (for SSE); the dashboard prompts for and stores it.
+  Unset, everything is open for local use.
 - **Container + CI** — a `Dockerfile` and `docker compose` for one-command
   deploys, and a GitHub Actions workflow that lints (ruff) and runs the full test
   suite on every push, plus a Docker build job.
@@ -235,8 +236,10 @@ loop. A directive auto-closes when all its tasks are done.
 All per-company endpoints accept an optional `?company=<id>` parameter
 (default `"default"`); omit it for a single-company setup.
 
-State-changing calls (`POST`/`PUT`) require `Authorization: Bearer <token>` (or
-`X-API-Token`) when `COMPANY_API_TOKEN` is set; `GET` endpoints stay open.
+When `COMPANY_API_TOKEN` is set, **all** `/api` endpoints except `/api/health`
+require the token — via `Authorization: Bearer <token>`, `X-API-Token`, or
+`?token=` (the query form lets the SSE stream authenticate). Comparison is
+constant-time. Unset, the API is open for local use.
 
 ## Tests
 
@@ -246,7 +249,7 @@ ruff check .
 pytest
 ```
 
-The suite (69 tests) runs entirely offline (forced simulation mode, isolated
+The suite (74 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
@@ -255,7 +258,9 @@ autopilot, standing orders (recurring directives), the CRM/pipeline (customers,
 deals, tickets from agent activity), drill-down detail (directive task trees and
 customer records), multi-company isolation, the cross-thread event bus, the
 human-in-the-loop controls (approval gating, agent config persistence, cost
-tracking, budget alerts), the KPI time series, and optional token auth.
+tracking, budget alerts), the KPI time series, optional token auth, and the
+security hardening (read gating, company cap, log sanitization, SQL column
+guard, table retention).
 
 ## Design notes
 

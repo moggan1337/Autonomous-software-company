@@ -48,6 +48,13 @@ _COMPANY_NAMES = [
 ]
 _ISSUE_WORDS = ("bug", "broken", "error", "issue", "complaint", "crash", "fail", "reset", "slow", "wrong")
 
+
+def _sanitize(message: str, limit: int = 500) -> str:
+    """Strip control characters (newlines, etc.) so logged/stored activity text
+    can't forge extra log lines, and cap its length."""
+    cleaned = "".join(" " if ord(c) < 32 else c for c in message)
+    return cleaned[:limit]
+
 log = logging.getLogger("company.orchestrator")
 
 MAX_DEPTH = 8   # how many hand-offs deep the cascade may run
@@ -527,6 +534,7 @@ class Company:
             self._log(Department.CEO, "Direction complete — all work finished.", "info")
 
     def _log(self, department: Department, message: str, kind: str) -> None:
+        message = _sanitize(message)
         event = self.db.add_event(Event(department=department, message=message, kind=kind))
         self.bus.publish({"type": "event", "data": event.to_dict()})
         log.info("[%s] %s", department.value, message)

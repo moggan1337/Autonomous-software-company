@@ -8,6 +8,7 @@ correct for the company's modest write volume.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from typing import Any
@@ -21,6 +22,13 @@ from .models import (
     Task,
     TaskStatus,
 )
+
+# Retention caps for append-only tables that would otherwise grow without bound.
+# (The cost ledger `usage` is intentionally NOT trimmed — cost_summary sums it.)
+EVENTS_KEEP = 2000
+KPI_KEEP = 2000
+
+_COL_RE = re.compile(r"^[a-z_]+$")  # guard for dynamically-built UPDATE columns
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS directives (
@@ -134,6 +142,10 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 
 class Database:
     def __init__(self, path: str) -> None:
+        if path != ":memory:":
+            from pathlib import Path
+
+            Path(path).resolve().parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
@@ -316,6 +328,7 @@ class Database:
                     values["tickets_resolved"],
                 ),
             )
+            self._trim("kpi_snapshots", KPI_KEEP, order_col="ts")
             self._conn.commit()
 
     def get_kpis(self, limit: int = 300) -> list[dict]:
@@ -467,8 +480,17 @@ class Database:
                 "INSERT INTO events (id, department, message, kind, created_at) VALUES (?,?,?,?,?)",
                 (e.id, e.department.value, e.message, e.kind, e.created_at),
             )
+            self._trim("events", EVENTS_KEEP)
             self._conn.commit()
         return e
+
+    def _trim(self, table: str, keep: int, order_col: str = "created_at") -> None:
+        """Keep only the most recent `keep` rows of an append-only table."""
+        self._conn.execute(
+            f"DELETE FROM {table} WHERE id NOT IN "
+            f"(SELECT id FROM {table} ORDER BY {order_col} DESC LIMIT ?)",
+            (keep,),
+        )
 
     def get_events(self, limit: int = 200) -> list[dict]:
         rows = self._query("SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,))
@@ -481,6 +503,12 @@ class Database:
         fields = dict(fields)
         if table == "tasks":
             fields.setdefault("updated_at", _now())
+        # Column names are interpolated into SQL, so reject anything that isn't a
+        # plain identifier. All callers pass code-defined keys; this is a guard
+        # against a future caller forwarding user-controlled field names.
+        bad = [k for k in fields if not _COL_RE.match(k)]
+        if bad:
+            raise ValueError(f"Illegal column name(s): {bad}")
         cols = ", ".join(f"{k}=?" for k in fields)
         with self._lock:
             self._conn.execute(

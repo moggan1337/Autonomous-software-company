@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from .orchestrator import Company
 log = logging.getLogger("company.manager")
 
 DEFAULT_ID = "default"
+MAX_COMPANIES = 50  # bound resource use (each company is a DB + worker thread)
+_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 class CompanyManager:
@@ -33,6 +36,7 @@ class CompanyManager:
         self._meta: dict[str, dict] = {}
         self._loop = None
         self._started = False
+        self.max_companies = MAX_COMPANIES
         self._load()
 
     # ---- registry ---------------------------------------------------------
@@ -62,6 +66,10 @@ class CompanyManager:
 
     def _instantiate(self, entry: dict) -> Company:
         cid = entry["id"]
+        # Ids are app-generated; validating here stops a tampered registry from
+        # turning an id into a filesystem path-traversal when building the db path.
+        if not _ID_RE.match(cid):
+            raise ValueError(f"Invalid company id: {cid!r}")
         settings = dataclasses.replace(self.settings, db_path=self._db_path_for(cid))
         company = Company(settings=settings, step_delay=self.step_delay)
         self._companies[cid] = company
@@ -79,6 +87,8 @@ class CompanyManager:
 
     def create(self, name: str) -> dict:
         with self._lock:
+            if len(self._companies) >= self.max_companies:
+                raise ValueError(f"Company limit reached ({self.max_companies}).")
             entry = {"id": _id("co"), "name": name.strip() or "Untitled Company", "created_at": now()}
             company = self._instantiate(entry)
             self._save()

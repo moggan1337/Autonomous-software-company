@@ -8,6 +8,7 @@ no extra plumbing. The dashboard polls ``/api/state`` and streams ``/api/stream`
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -27,9 +28,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-# Optional auth: when set (COMPANY_API_TOKEN), state-changing requests must carry
-# the token. Reads (GET) stay open so the dashboard works without plumbing.
+# Optional auth: when COMPANY_API_TOKEN is set, every /api request (reads
+# included — to protect tenant data) must carry the token. Liveness and the
+# static dashboard assets stay open. When unset, the API is open for local use.
 API_TOKEN = SETTINGS.api_token
+
+# /api paths reachable without a token even when one is configured.
+_PUBLIC_API_PATHS = {"/api/health"}
+
+
+def _request_token(request: Request) -> str:
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    # x-api-token header or ?token= query (the latter lets EventSource/SSE auth,
+    # since it cannot set request headers).
+    return token or request.headers.get("x-api-token", "") or request.query_params.get("token", "")
 
 # A small delay per task makes the activity feed readable in simulation mode,
 # where work would otherwise complete instantly.
@@ -58,13 +71,12 @@ app = FastAPI(title="Autonomous Software Company", version="0.5.0", lifespan=lif
 
 @app.middleware("http")
 async def require_token(request: Request, call_next):
-    """Gate state-changing requests behind a token when one is configured."""
-    if API_TOKEN and request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        header = request.headers.get("authorization", "")
-        provided = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        provided = provided or request.headers.get("x-api-token", "")
-        if provided != API_TOKEN:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    """When a token is configured, require it on all /api requests (reads too)."""
+    if API_TOKEN:
+        path = request.url.path
+        if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
+            if not hmac.compare_digest(_request_token(request), API_TOKEN):
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
 
@@ -106,7 +118,11 @@ def list_companies() -> JSONResponse:
 
 @app.post("/api/companies")
 def create_company(payload: CompanyIn) -> JSONResponse:
-    return JSONResponse({"company": manager.create(payload.name)})
+    try:
+        company = manager.create(payload.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    return JSONResponse({"company": company})
 
 
 # ---- per-company endpoints (scoped by ?company=) --------------------------
