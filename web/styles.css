@@ -95,6 +95,35 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 
 .metric.over .num { color: var(--red); }
 
+.directives { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.directives ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.directives li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 6px; background: var(--panel-2); cursor: pointer; font-size: 13px;
+}
+.directives li:hover { border-color: var(--accent); }
+.directives .d-right { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.dir-empty { color: var(--muted); font-size: 13px; }
+
+.pill.src-world { background: rgba(79,156,249,.18); color: var(--accent); }
+.pill.src-schedule { background: rgba(163,113,247,.18); color: var(--purple); }
+.pill.src-human { background: rgba(139,151,167,.18); color: var(--muted); }
+.pill.st-done { background: rgba(63,185,80,.18); color: var(--green); }
+.pill.st-in_progress { background: rgba(79,156,249,.18); color: var(--accent); }
+.pill.st-pending { background: rgba(139,151,167,.18); color: var(--muted); }
+.pill.st-blocked { background: rgba(248,81,73,.18); color: var(--red); }
+.pill.st-awaiting_approval { background: rgba(210,153,34,.18); color: var(--amber); }
+
+.tree, .tree ul { list-style: none; margin: 0; padding-left: 0; }
+.tree ul { padding-left: 18px; border-left: 1px solid var(--border); margin-left: 6px; }
+.tree li { padding: 6px 0; font-size: 13px; }
+.tree .t-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tree .d-rw { font-size: 10px; color: var(--amber); }
+.tree .d-art { font-size: 12px; color: var(--muted); margin: 2px 0 2px 2px; }
+.detail-meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.detail-sub { font-size: 13px; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+
 .crm { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
 .crm-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 .crm-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }

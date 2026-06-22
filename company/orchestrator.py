@@ -480,6 +480,32 @@ class Company:
             },
         }
 
+    # ---- drill-down detail ------------------------------------------------
+    def directive_detail(self, directive_id: str) -> dict | None:
+        """Full picture of one directive: its task tree, artifacts, and cost."""
+        directive = self.db.get_directive(directive_id)
+        if directive is None:
+            return None
+        tasks = [t.to_dict() for t in self.db.get_tasks(directive_id)]
+        artifacts = self.db.artifacts_for_tasks([t["id"] for t in tasks])
+        return {
+            "directive": directive,
+            "tasks": tasks,
+            "artifacts": artifacts,
+            "cost": self.db.cost_by_directive(directive_id),
+        }
+
+    def customer_detail(self, customer_id: str) -> dict | None:
+        """A customer with their deals and tickets."""
+        customer = self.db.get_customer(customer_id)
+        if customer is None:
+            return None
+        return {
+            "customer": customer,
+            "deals": self.db.get_deals_for_customer(customer_id),
+            "tickets": self.db.get_tickets_for_customer(customer_id),
+        }
+
     # ---- internals --------------------------------------------------------
     def _depth(self, task: Task) -> int:
         depth, parent_id, guard = 0, task.parent_id, 0

@@ -171,6 +171,22 @@ def delete_schedule(order_id: str) -> dict:
     return {"ok": True}
 
 
+@app.get("/api/directives/{directive_id}")
+def directive_detail(directive_id: str) -> JSONResponse:
+    detail = company.directive_detail(directive_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="No directive with that id.")
+    return JSONResponse(detail)
+
+
+@app.get("/api/customers/{customer_id}")
+def customer_detail(customer_id: str) -> JSONResponse:
+    detail = company.customer_detail(customer_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="No customer with that id.")
+    return JSONResponse(detail)
+
+
 @app.get("/api/stream")
 async def stream() -> StreamingResponse:
     """Server-Sent Events: push activity and agent reasoning to the dashboard live."""

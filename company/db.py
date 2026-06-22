@@ -165,6 +165,10 @@ class Database:
     def get_directives(self) -> list[dict]:
         return [dict(r) for r in self._query("SELECT * FROM directives ORDER BY created_at DESC")]
 
+    def get_directive(self, directive_id: str) -> dict | None:
+        rows = self._query("SELECT * FROM directives WHERE id=?", (directive_id,))
+        return dict(rows[0]) if rows else None
+
     # ---- tasks ------------------------------------------------------------
     def add_task(self, t: Task) -> Task:
         with self._lock:
@@ -348,6 +352,28 @@ class Database:
     def get_customers(self, limit: int = 50) -> list[dict]:
         return [dict(r) for r in self._query(
             "SELECT * FROM customers ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+    def get_customer(self, customer_id: str) -> dict | None:
+        rows = self._query("SELECT * FROM customers WHERE id=?", (customer_id,))
+        return dict(rows[0]) if rows else None
+
+    def get_deals_for_customer(self, customer_id: str) -> list[dict]:
+        return [dict(r) for r in self._query(
+            "SELECT * FROM deals WHERE customer_id=? ORDER BY created_at DESC", (customer_id,))]
+
+    def get_tickets_for_customer(self, customer_id: str) -> list[dict]:
+        return [dict(r) for r in self._query(
+            "SELECT * FROM tickets WHERE customer_id=? ORDER BY created_at DESC", (customer_id,))]
+
+    def artifacts_for_tasks(self, task_ids: list[str]) -> list[dict]:
+        if not task_ids:
+            return []
+        placeholders = ",".join("?" for _ in task_ids)
+        rows = self._query(
+            f"SELECT * FROM artifacts WHERE task_id IN ({placeholders}) ORDER BY created_at",
+            tuple(task_ids),
+        )
+        return [dict(r) for r in rows]
 
     def get_deals(self, limit: int = 50) -> list[dict]:
         return [dict(r) for r in self._query(

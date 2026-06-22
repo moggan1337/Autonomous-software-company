@@ -60,6 +60,11 @@
       </div>
     </section>
 
+    <section class="directives">
+      <h2>Directives <span class="sub">— click one to see its full task tree</span></h2>
+      <ul id="directive-list"></ul>
+    </section>
+
     <section class="crm">
       <h2>Customers &amp; pipeline <span class="sub">— created automatically from agent activity</span></h2>
       <div class="crm-cards" id="crm-cards"></div>
@@ -102,6 +107,14 @@
       <button class="modal-close" id="modal-close">×</button>
       <h3 id="modal-title"></h3>
       <pre id="modal-content"></pre>
+    </div>
+  </div>
+
+  <div class="modal" id="detail-modal" hidden>
+    <div class="modal-body">
+      <button class="modal-close" id="detail-close">×</button>
+      <h3 id="detail-title"></h3>
+      <div id="detail-content"></div>
     </div>
   </div>
 

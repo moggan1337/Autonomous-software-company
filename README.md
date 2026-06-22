@@ -147,6 +147,8 @@ The single human seat. From `http://127.0.0.1:8000` you can:
 - Watch every **department** light up as it works (live status).
 - Track **Business KPIs** (revenue, customers, tickets resolved) on live charts.
 - Browse the **CRM** — active customers, win rate, recent deals and tickets.
+- **Drill down** — click a directive to see its full task tree (with statuses,
+  rework, and artifacts) and cost; click a deal to see the customer's record.
 - Follow the **activity feed** of delegations, work, and hand-offs in real time.
 - Open any **deliverable** to read what an agent produced.
 - See company-wide **metrics** (tasks, in progress, awaiting, rework, est. cost).
@@ -207,6 +209,8 @@ loop. A directive auto-closes when all its tasks are done.
 | `GET` | `/` | The dashboard. |
 | `GET` | `/api/health` | Liveness + current mode. |
 | `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, approvals, agents, cost, KPIs, CRM). |
+| `GET` | `/api/directives/{id}` | Drill-down: a directive's task tree, artifacts, and cost. |
+| `GET` | `/api/customers/{id}` | Drill-down: a customer with their deals and tickets. |
 | `GET` | `/api/stream` | Server-Sent Events: live activity + agent reasoning. |
 | `POST` | `/api/directive` | Submit a human direction: `{"text": "..."}`. |
 | `POST` | `/api/world/start` · `/stop` | Turn autopilot on/off. |
@@ -228,15 +232,16 @@ ruff check .
 pytest
 ```
 
-The suite (58 tests) runs entirely offline (forced simulation mode, isolated
+The suite (64 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
 autopilot, standing orders (recurring directives), the CRM/pipeline (customers,
-deals, tickets from agent activity), the cross-thread event bus, the
-human-in-the-loop controls (approval gating, agent config persistence, cost
-tracking, budget alerts), the KPI time series, and optional token auth.
+deals, tickets from agent activity), drill-down detail (directive task trees and
+customer records), the cross-thread event bus, the human-in-the-loop controls
+(approval gating, agent config persistence, cost tracking, budget alerts), the
+KPI time series, and optional token auth.
 
 ## Design notes
 

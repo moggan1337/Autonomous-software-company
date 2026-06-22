@@ -98,12 +98,100 @@ function render(state) {
   renderToggles(state);
   renderMetrics(state);
   renderKpis(state);
+  renderDirectives(state.directives || []);
   renderCrm(state.crm);
   renderApprovals(state.approvals || []);
   renderSchedules(state.schedules || []);
   renderDepartments(state);
   renderFeed(state.events);
   renderArtifacts(state.artifacts);
+}
+
+function renderDirectives(directives) {
+  const list = document.getElementById("directive-list");
+  if (!directives.length) {
+    list.innerHTML = `<li class="dir-empty">No directives yet. Give the company a direction above.</li>`;
+    return;
+  }
+  list.innerHTML = directives
+    .slice(0, 30)
+    .map(
+      (d) => `<li data-directive="${d.id}">
+        <span>${escapeHtml(d.text)}</span>
+        <span class="d-right">
+          <span class="pill src-${d.source}">${d.source}</span>
+          <span class="pill st-${d.status}">${escapeHtml(d.status)}</span>
+        </span>
+      </li>`
+    )
+    .join("");
+  list.querySelectorAll("[data-directive]").forEach((li) =>
+    li.addEventListener("click", () => openDirective(li.dataset.directive))
+  );
+}
+
+async function openDirective(id) {
+  const res = await fetch(`/api/directives/${id}`);
+  if (!res.ok) return;
+  const d = await res.json();
+  document.getElementById("detail-title").textContent = d.directive.text;
+  document.getElementById("detail-content").innerHTML =
+    `<div class="detail-meta">status: ${escapeHtml(d.directive.status)} · source: ${escapeHtml(d.directive.source)} · est. cost: $${(d.cost || 0).toFixed(4)} · ${d.tasks.length} task(s)</div>` +
+    taskTree(d.tasks, d.artifacts);
+  showDetail();
+}
+
+function taskTree(tasks, artifacts) {
+  const byParent = {};
+  const ids = new Set(tasks.map((t) => t.id));
+  tasks.forEach((t) => {
+    const key = t.parent_id && ids.has(t.parent_id) ? t.parent_id : "root";
+    (byParent[key] = byParent[key] || []).push(t);
+  });
+  const artByTask = {};
+  artifacts.forEach((a) => (artByTask[a.task_id] = artByTask[a.task_id] || []).push(a));
+
+  function node(t) {
+    const kids = (byParent[t.id] || []).map(node).join("");
+    const arts = (artByTask[t.id] || [])
+      .map((a) => `<div class="d-art">📄 ${escapeHtml(a.title)}</div>`)
+      .join("");
+    const rw = t.rework_count ? `<span class="d-rw">rework ${t.rework_count}</span>` : "";
+    return `<li>
+      <div class="t-row">
+        <span class="pill st-${t.status}">${escapeHtml(t.status)}</span>
+        <b>${escapeHtml(t.department)}</b><span>${escapeHtml(t.title)}</span>${rw}
+      </div>
+      ${arts}
+      ${kids ? `<ul>${kids}</ul>` : ""}
+    </li>`;
+  }
+  const roots = byParent["root"] || [];
+  return `<ul class="tree">${roots.map(node).join("")}</ul>`;
+}
+
+async function openCustomer(id) {
+  if (!id) return;
+  const res = await fetch(`/api/customers/${id}`);
+  if (!res.ok) return;
+  const d = await res.json();
+  const c = d.customer;
+  const deals = d.deals
+    .map((x) => `<li><span>${escapeHtml(x.name)}</span><span><b>$${Math.round(x.value).toLocaleString()}</b> <span class="pill ${x.stage}">${x.stage}</span></span></li>`)
+    .join("") || `<li class="crm-empty">No deals.</li>`;
+  const tickets = d.tickets
+    .map((x) => `<li><span>${escapeHtml(x.subject)}</span><span class="pill ${x.status}">${x.status}</span></li>`)
+    .join("") || `<li class="crm-empty">No tickets.</li>`;
+  document.getElementById("detail-title").textContent = c.name;
+  document.getElementById("detail-content").innerHTML =
+    `<div class="detail-meta">status: ${escapeHtml(c.status)} · ${c.seats} seat(s) · source: ${escapeHtml(c.source)}</div>` +
+    `<div class="detail-sub">Deals</div><ul class="crm-list-ul">${deals}</ul>` +
+    `<div class="detail-sub">Tickets</div><ul class="crm-list-ul">${tickets}</ul>`;
+  showDetail();
+}
+
+function showDetail() {
+  document.getElementById("detail-modal").hidden = false;
 }
 
 function renderCrm(crm) {
@@ -120,15 +208,20 @@ function renderCrm(crm) {
     .join("");
 
   const deals = crm.deals || [];
-  document.getElementById("crm-deals").innerHTML = deals.length
+  const dealsEl = document.getElementById("crm-deals");
+  dealsEl.innerHTML = deals.length
     ? deals
         .map(
-          (d) => `<li><span>${escapeHtml(d.name)}</span>
+          (d) => `<li data-customer="${d.customer_id || ""}" style="cursor:pointer">
+            <span>${escapeHtml(d.name)}</span>
             <span><b>$${Math.round(d.value).toLocaleString()}</b>
             <span class="pill ${d.stage}">${d.stage}</span></span></li>`
         )
         .join("")
     : `<li class="crm-empty">Deals appear as Sales closes work.</li>`;
+  dealsEl.querySelectorAll("[data-customer]").forEach((li) =>
+    li.addEventListener("click", () => openCustomer(li.dataset.customer))
+  );
 
   const tickets = crm.tickets || [];
   document.getElementById("crm-tickets").innerHTML = tickets.length
@@ -448,6 +541,13 @@ function init() {
   });
   document.getElementById("artifact-modal").addEventListener("click", (e) => {
     if (e.target.id === "artifact-modal") e.target.hidden = true;
+  });
+
+  document.getElementById("detail-close").addEventListener("click", () => {
+    document.getElementById("detail-modal").hidden = true;
+  });
+  document.getElementById("detail-modal").addEventListener("click", (e) => {
+    if (e.target.id === "detail-modal") e.target.hidden = true;
   });
 
   document.getElementById("config-close").addEventListener("click", () => {
