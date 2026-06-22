@@ -99,9 +99,47 @@ function render(state) {
   renderMetrics(state);
   renderKpis(state);
   renderApprovals(state.approvals || []);
+  renderSchedules(state.schedules || []);
   renderDepartments(state);
   renderFeed(state.events);
   renderArtifacts(state.artifacts);
+}
+
+function renderSchedules(orders) {
+  const list = document.getElementById("schedule-list");
+  if (!orders.length) {
+    list.innerHTML = `<li class="sched-empty">No standing orders yet. Add one above to run a directive on a repeating schedule.</li>`;
+    return;
+  }
+  const now = Date.now() / 1000;
+  list.innerHTML = orders
+    .map((o) => {
+      const inN = Math.max(0, Math.round(o.next_run - now));
+      const when = o.enabled ? `next in ${inN}s` : "paused";
+      return `<li class="${o.enabled ? "" : "paused"}">
+        <div>
+          <div>${escapeHtml(o.text)}</div>
+          <div class="sched-meta">every ${Math.round(o.interval_seconds)}s · ${o.runs} run(s) · ${when}</div>
+        </div>
+        <div class="sched-actions">
+          <button data-toggle="${o.id}">${o.enabled ? "Pause" : "Resume"}</button>
+          <button data-delete="${o.id}">Delete</button>
+        </div>
+      </li>`;
+    })
+    .join("");
+  list.querySelectorAll("[data-toggle]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await mutate(`/api/schedules/${b.dataset.toggle}/toggle`);
+      fetchState();
+    })
+  );
+  list.querySelectorAll("[data-delete]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await mutate(`/api/schedules/${b.dataset.delete}`, "DELETE");
+      fetchState();
+    })
+  );
 }
 
 function renderKpis(state) {
@@ -358,6 +396,16 @@ function init() {
 
   document.getElementById("autopilot-btn").addEventListener("click", toggleAutopilot);
   document.getElementById("approvals-btn").addEventListener("click", toggleApprovals);
+
+  document.getElementById("schedule-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = document.getElementById("sched-text").value.trim();
+    const interval = parseInt(document.getElementById("sched-interval").value, 10);
+    if (!text || !(interval >= 2)) return;
+    await mutate("/api/schedules", "POST", { text, interval_seconds: interval });
+    document.getElementById("sched-text").value = "";
+    fetchState();
+  });
 
   document.getElementById("modal-close").addEventListener("click", () => {
     document.getElementById("artifact-modal").hidden = true;

@@ -30,6 +30,7 @@ from .models import (
     Directive,
     Event,
     Priority,
+    StandingOrder,
     Task,
     TaskStatus,
     _id,
@@ -95,7 +96,7 @@ class Company:
         directive = self.db.add_directive(
             Directive(text=text, status=TaskStatus.IN_PROGRESS, source=source)
         )
-        origin = "Inbound" if source == "world" else "New direction"
+        origin = {"world": "Inbound", "schedule": "Scheduled"}.get(source, "New direction")
         self._log(Department.CEO, f"{origin} received: {text}", "info")
         summary, tasks = self.ceo.plan(text, directive.id)
         self.db.update_directive(directive.id, summary=summary)
@@ -318,8 +319,58 @@ class Company:
 
     def _loop(self) -> None:
         while self._running.is_set():
+            self.run_due_schedules()
             if self.tick() == 0:
                 time.sleep(0.4)
+
+    # ---- standing orders (recurring directives) ---------------------------
+    def create_standing_order(self, text: str, interval_seconds: float) -> dict:
+        ts = now()
+        order = StandingOrder(
+            text=text, interval_seconds=float(interval_seconds),
+            next_run=ts + float(interval_seconds),
+        )
+        self.db.add_standing_order(order)
+        self._log(
+            Department.CEO,
+            f"Standing order created — every {int(interval_seconds)}s: {text}",
+            "info",
+        )
+        return order.to_dict()
+
+    def run_due_schedules(self) -> int:
+        """Submit any recurring directives that have come due, then reschedule them."""
+        ts = now()
+        due = self.db.get_due_standing_orders(ts)
+        for o in due:
+            self.submit_directive(o["text"], source="schedule")
+            self.db.update_standing_order(
+                o["id"], last_run=ts, next_run=ts + o["interval_seconds"], runs=o["runs"] + 1
+            )
+        return len(due)
+
+    def toggle_standing_order(self, order_id: str) -> dict | None:
+        order = next((o for o in self.db.get_standing_orders() if o["id"] == order_id), None)
+        if order is None:
+            return None
+        new_enabled = not order["enabled"]
+        # When re-enabling, push the next run out so it doesn't fire a backlog at once.
+        fields = {"enabled": new_enabled}
+        if new_enabled:
+            fields["next_run"] = now() + order["interval_seconds"]
+        self.db.update_standing_order(order_id, **fields)
+        self._log(
+            Department.CEO,
+            f"Standing order {'resumed' if new_enabled else 'paused'}: {order['text']}",
+            "info",
+        )
+        return {**order, **fields}
+
+    def delete_standing_order(self, order_id: str) -> bool:
+        ok = self.db.delete_standing_order(order_id)
+        if ok:
+            self._log(Department.CEO, "Standing order deleted.", "info")
+        return ok
 
     # ---- snapshot for the dashboard --------------------------------------
     def snapshot(self) -> dict:
@@ -353,6 +404,7 @@ class Company:
             "events": self.db.get_events(120),
             "approvals": awaiting,
             "agents": self.config.all(),
+            "schedules": self.db.get_standing_orders(),
             "cost": cost,
             "kpis": kpis,
             "kpi_latest": latest_kpi,

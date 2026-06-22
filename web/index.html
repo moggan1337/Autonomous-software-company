@@ -37,6 +37,18 @@
       <div class="ticker" id="ticker"></div>
     </section>
 
+    <section class="schedules">
+      <h2>Standing orders <span class="sub">— recurring directives the company runs on a schedule</span></h2>
+      <form id="schedule-form" class="sched-form">
+        <input id="sched-text" type="text" autocomplete="off" placeholder="e.g. Analyze retention and report" />
+        <span class="every">every</span>
+        <input id="sched-interval" type="number" min="2" max="86400" value="30" />
+        <span class="unit">sec</span>
+        <button type="submit">Add</button>
+      </form>
+      <ul id="schedule-list"></ul>
+    </section>
+
     <section class="metrics" id="metrics"></section>
 
     <section class="kpis">

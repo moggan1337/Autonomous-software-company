@@ -70,6 +70,11 @@ class AgentConfigIn(BaseModel):
     enabled: bool | None = None
 
 
+class ScheduleIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    interval_seconds: float = Field(ge=2, le=86400)
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
@@ -143,6 +148,27 @@ def update_agent(department: str, payload: AgentConfigIn) -> JSONResponse:
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     cfg = company.update_agent_config(dept, **fields)
     return JSONResponse({"agent": cfg.to_dict()})
+
+
+@app.post("/api/schedules")
+def create_schedule(payload: ScheduleIn) -> JSONResponse:
+    order = company.create_standing_order(payload.text.strip(), payload.interval_seconds)
+    return JSONResponse({"schedule": order})
+
+
+@app.post("/api/schedules/{order_id}/toggle")
+def toggle_schedule(order_id: str) -> JSONResponse:
+    order = company.toggle_standing_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="No standing order with that id.")
+    return JSONResponse({"schedule": order})
+
+
+@app.delete("/api/schedules/{order_id}")
+def delete_schedule(order_id: str) -> dict:
+    if not company.delete_standing_order(order_id):
+        raise HTTPException(status_code=404, detail="No standing order with that id.")
+    return {"ok": True}
 
 
 @app.get("/api/stream")

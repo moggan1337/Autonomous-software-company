@@ -47,6 +47,9 @@ And the company is **alive**, not just reactive:
 - **Real-time dashboard** — activity and agent reasoning are pushed live over
   Server-Sent Events (no polling); you watch each agent start "thinking" and
   hand work off the instant it happens.
+- **Standing orders** — schedule recurring directives ("every 30s, analyze
+  retention") that the company submits to itself on a timer, so routine
+  operations run on a cadence without you lifting a finger.
 
 And the human stays **in control** when they want to be:
 
@@ -130,6 +133,7 @@ The single human seat. From `http://127.0.0.1:8000` you can:
 
 - **Give a direction** in the CEO console (or click an example).
 - Flip on **Autopilot** to let the world send inbound work the company handles itself.
+- Add **Standing orders** to run a directive on a repeating schedule.
 - Flip on **Approvals** to gate risky work, then approve/reject from the queue.
 - Click any **department** to configure its effort, model, instructions, or disable it.
 - Watch a live **reasoning ticker** as agents start working (streamed, not polled).
@@ -165,6 +169,7 @@ company/
   bus.py             thread-safe pub/sub bridging the worker thread to SSE subscribers
   world.py           autopilot: generates inbound tickets/leads/ideas on a timer
   agentconfig.py     human-tunable per-department config (model/effort/instructions/enabled)
+  (standing orders)  recurring directives on a schedule — see orchestrator + db
   orchestrator.py    the engine: delegation, work loop, rework, approvals, cost, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
@@ -196,6 +201,8 @@ loop. A directive auto-closes when all its tasks are done.
 | `GET` | `/api/stream` | Server-Sent Events: live activity + agent reasoning. |
 | `POST` | `/api/directive` | Submit a human direction: `{"text": "..."}`. |
 | `POST` | `/api/world/start` · `/stop` | Turn autopilot on/off. |
+| `POST` | `/api/schedules` | Create a standing order: `{"text": "...", "interval_seconds": N}`. |
+| `POST` | `/api/schedules/{id}/toggle` · `DELETE /api/schedules/{id}` | Pause/resume or delete a standing order. |
 | `POST` | `/api/approvals/start` · `/stop` | Turn approval gating on/off. |
 | `POST` | `/api/tasks/{id}/approve` · `/reject` | Decide on a task awaiting approval. |
 | `GET` | `/api/agents` | List per-department agent configs. |
@@ -212,14 +219,14 @@ ruff check .
 pytest
 ```
 
-The suite (46 tests) runs entirely offline (forced simulation mode, isolated
+The suite (53 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
-autopilot, the cross-thread event bus, the human-in-the-loop controls
-(approval gating, agent config persistence, cost tracking, budget alerts), the
-KPI time series, and optional token auth.
+autopilot, standing orders (recurring directives), the cross-thread event bus,
+the human-in-the-loop controls (approval gating, agent config persistence, cost
+tracking, budget alerts), the KPI time series, and optional token auth.
 
 ## Design notes
 

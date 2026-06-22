@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS kpi_snapshots (
     customers INTEGER NOT NULL,
     tickets_resolved INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS standing_orders (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    interval_seconds REAL NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_run REAL,
+    next_run REAL NOT NULL,
+    runs INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -283,6 +293,47 @@ class Database:
             "SELECT * FROM kpi_snapshots ORDER BY ts DESC LIMIT ?", (limit,)
         )
         return [dict(r) for r in reversed(rows)]
+
+    # ---- standing orders (recurring directives) ---------------------------
+    def add_standing_order(self, order) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO standing_orders
+                   (id, text, interval_seconds, enabled, last_run, next_run, runs, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    order.id, order.text, order.interval_seconds, int(order.enabled),
+                    order.last_run, order.next_run, order.runs, order.created_at,
+                ),
+            )
+            self._conn.commit()
+
+    def get_standing_orders(self) -> list[dict]:
+        rows = self._query("SELECT * FROM standing_orders ORDER BY created_at")
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["enabled"] = bool(d["enabled"])
+            out.append(d)
+        return out
+
+    def get_due_standing_orders(self, ts: float) -> list[dict]:
+        rows = self._query(
+            "SELECT * FROM standing_orders WHERE enabled=1 AND next_run<=? ORDER BY next_run",
+            (ts,),
+        )
+        return [dict(r) for r in rows]
+
+    def update_standing_order(self, order_id: str, **fields: Any) -> None:
+        if "enabled" in fields:
+            fields["enabled"] = int(fields["enabled"])
+        self._update("standing_orders", order_id, fields)
+
+    def delete_standing_order(self, order_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM standing_orders WHERE id=?", (order_id,))
+            self._conn.commit()
+            return cur.rowcount > 0
 
     def cost_by_directive(self, directive_id: str) -> float:
         row = self._query(

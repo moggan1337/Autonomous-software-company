@@ -141,6 +141,23 @@ class AgentConfig:
 
 
 @dataclass
+class StandingOrder:
+    """A recurring directive the company submits to itself on a fixed interval."""
+
+    text: str
+    interval_seconds: float
+    next_run: float
+    id: str = field(default_factory=lambda: _id("ord"))
+    enabled: bool = True
+    last_run: float | None = None
+    runs: int = 0
+    created_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class Event:
     """An entry in the company activity feed."""
 

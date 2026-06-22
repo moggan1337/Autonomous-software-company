@@ -70,6 +70,26 @@ def test_unknown_department_is_404():
         assert client.put("/api/agents/nope", json={"enabled": False}).status_code == 404
 
 
+def test_schedule_endpoints_crud():
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/schedules", json={"text": "Analyze retention", "interval_seconds": 30}
+        )
+        assert created.status_code == 200
+        oid = created.json()["schedule"]["id"]
+        assert client.post(f"/api/schedules/{oid}/toggle").json()["schedule"]["enabled"] is False
+        assert client.delete(f"/api/schedules/{oid}").status_code == 200
+        assert client.delete(f"/api/schedules/{oid}").status_code == 404
+
+
+def test_schedule_interval_validation():
+    with TestClient(app) as client:
+        # Below the 2s minimum is rejected.
+        assert client.post(
+            "/api/schedules", json={"text": "x", "interval_seconds": 0.5}
+        ).status_code == 422
+
+
 def test_approve_missing_task_is_404():
     with TestClient(app) as client:
         assert client.post("/api/tasks/task_doesnotexist/approve").status_code == 404

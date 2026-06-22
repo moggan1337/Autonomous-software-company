@@ -95,6 +95,23 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 
 .metric.over .num { color: var(--red); }
 
+.schedules { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.sched-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.sched-form input[type=text] { flex: 1; min-width: 200px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.sched-form input[type=number] { width: 80px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.sched-form .every, .sched-form .unit { color: var(--muted); font-size: 13px; }
+#schedule-list { list-style: none; margin: 0; padding: 0; }
+#schedule-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 8px; background: var(--panel-2);
+}
+#schedule-list li.paused { opacity: .55; }
+.sched-meta { font-size: 12px; color: var(--muted); }
+.sched-actions { display: flex; gap: 8px; }
+.sched-actions button { font-size: 12px; padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+.sched-empty { color: var(--muted); font-size: 13px; }
+
 .kpis { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
 .kpi-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 .kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
