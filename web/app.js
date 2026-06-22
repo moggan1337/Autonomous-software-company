@@ -14,15 +14,47 @@ let autopilot = false;
 let approvalsEnabled = false;
 let refreshTimer = null;
 let tickerTimer = null;
+let currentCompany = "default";
+let eventSource = null;
+
+// Append the active company to a request path.
+function withCo(path) {
+  return path + (path.includes("?") ? "&" : "?") + "company=" + encodeURIComponent(currentCompany);
+}
 
 async function fetchState() {
   try {
-    const res = await fetch("/api/state");
+    const res = await fetch(withCo("/api/state"));
     if (!res.ok) return;
     render(await res.json());
   } catch (e) {
     /* transient; the fallback poll or next event will retry */
   }
+}
+
+async function loadCompanies() {
+  try {
+    const res = await fetch("/api/companies");
+    if (!res.ok) return;
+    const companies = (await res.json()).companies || [];
+    const sel = document.getElementById("company-select");
+    sel.innerHTML = companies
+      .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+      .join("");
+    if (!companies.some((c) => c.id === currentCompany)) {
+      currentCompany = companies[0] ? companies[0].id : "default";
+    }
+    sel.value = currentCompany;
+  } catch (e) {
+    /* keep current company */
+  }
+}
+
+function switchCompany(id) {
+  currentCompany = id;
+  if (eventSource) eventSource.close();
+  connectStream();
+  fetchState();
 }
 
 // Coalesce bursts of stream events into one state refresh.
@@ -35,7 +67,8 @@ function scheduleRefresh() {
 }
 
 function connectStream() {
-  const es = new EventSource("/api/stream");
+  const es = new EventSource(withCo("/api/stream"));
+  eventSource = es;
   es.onmessage = (msg) => {
     let item;
     try {
@@ -78,7 +111,7 @@ async function mutate(path, method = "POST", body = null) {
   if (body) headers["Content-Type"] = "application/json";
   const token = localStorage.getItem("asc_token");
   if (token) headers["Authorization"] = "Bearer " + token;
-  const res = await fetch(path, {
+  const res = await fetch(withCo(path), {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -131,7 +164,7 @@ function renderDirectives(directives) {
 }
 
 async function openDirective(id) {
-  const res = await fetch(`/api/directives/${id}`);
+  const res = await fetch(withCo(`/api/directives/${id}`));
   if (!res.ok) return;
   const d = await res.json();
   document.getElementById("detail-title").textContent = d.directive.text;
@@ -172,7 +205,7 @@ function taskTree(tasks, artifacts) {
 
 async function openCustomer(id) {
   if (!id) return;
-  const res = await fetch(`/api/customers/${id}`);
+  const res = await fetch(withCo(`/api/customers/${id}`));
   if (!res.ok) return;
   const d = await res.json();
   const c = d.customer;
@@ -523,6 +556,21 @@ function init() {
     input.value = "";
   });
 
+  document.getElementById("company-select").addEventListener("change", (e) => {
+    switchCompany(e.target.value);
+  });
+  document.getElementById("new-company-btn").addEventListener("click", async () => {
+    const name = prompt("Name the new company:");
+    if (!name) return;
+    const res = await mutate("/api/companies", "POST", { name });
+    if (res.ok) {
+      const created = (await res.json()).company;
+      await loadCompanies();
+      document.getElementById("company-select").value = created.id;
+      switchCompany(created.id);
+    }
+  });
+
   document.getElementById("autopilot-btn").addEventListener("click", toggleAutopilot);
   document.getElementById("approvals-btn").addEventListener("click", toggleApprovals);
 
@@ -558,8 +606,10 @@ function init() {
   });
   document.getElementById("cfg-save").addEventListener("click", saveConfig);
 
-  fetchState();
-  connectStream();             // live push of activity + agent reasoning
+  loadCompanies().then(() => {
+    fetchState();
+    connectStream();             // live push of activity + agent reasoning
+  });
   setInterval(fetchState, 5000); // slow fallback in case the stream drops
 }
 

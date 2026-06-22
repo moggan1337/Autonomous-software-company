@@ -13,6 +13,7 @@ env/
 *.db
 *.db-journal
 company.db
+companies.json
 data/
 workspace/
 

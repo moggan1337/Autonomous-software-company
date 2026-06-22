@@ -64,6 +64,14 @@ And the human stays **in control** when they want to be:
   usage and cost; the dashboard shows live spend against a budget and the
   company raises an alert when the budget is exceeded.
 
+It runs **many companies at once**:
+
+- **Multi-tenant** — one deployment hosts any number of independent companies,
+  each with its own database, agents, world, and CRM. Switch between them (or
+  spin up a new one) from the dashboard header; every company runs in complete
+  isolation. There's always a `default` company, so a single-company setup needs
+  nothing extra.
+
 It has a real **business backbone**:
 
 - **CRM / pipeline** — completed Sales work becomes real Customer and Deal
@@ -138,6 +146,7 @@ docker build -t company . && docker run -p 8000:8000 company
 
 The single human seat. From `http://127.0.0.1:8000` you can:
 
+- **Switch companies** (or create one) from the header — each is fully isolated.
 - **Give a direction** in the CEO console (or click an example).
 - Flip on **Autopilot** to let the world send inbound work the company handles itself.
 - Add **Standing orders** to run a directive on a repeating schedule.
@@ -181,6 +190,7 @@ company/
   agentconfig.py     human-tunable per-department config (model/effort/instructions/enabled)
   (standing orders)  recurring directives on a schedule — see orchestrator + db
   (CRM)              customers / deals / tickets from agent activity — see orchestrator + db
+  manager.py         multi-company manager: one isolated Company (own DB) per tenant
   orchestrator.py    the engine: delegation, work loop, rework, approvals, cost, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
@@ -208,6 +218,7 @@ loop. A directive auto-closes when all its tasks are done.
 |---|---|---|
 | `GET` | `/` | The dashboard. |
 | `GET` | `/api/health` | Liveness + current mode. |
+| `GET` | `/api/companies` · `POST /api/companies` | List companies, or create one (`{"name": "..."}`). |
 | `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, approvals, agents, cost, KPIs, CRM). |
 | `GET` | `/api/directives/{id}` | Drill-down: a directive's task tree, artifacts, and cost. |
 | `GET` | `/api/customers/{id}` | Drill-down: a customer with their deals and tickets. |
@@ -221,6 +232,9 @@ loop. A directive auto-closes when all its tasks are done.
 | `GET` | `/api/agents` | List per-department agent configs. |
 | `PUT` | `/api/agents/{department}` | Update a department's model/effort/instructions/enabled. |
 
+All per-company endpoints accept an optional `?company=<id>` parameter
+(default `"default"`); omit it for a single-company setup.
+
 State-changing calls (`POST`/`PUT`) require `Authorization: Bearer <token>` (or
 `X-API-Token`) when `COMPANY_API_TOKEN` is set; `GET` endpoints stay open.
 
@@ -232,16 +246,16 @@ ruff check .
 pytest
 ```
 
-The suite (64 tests) runs entirely offline (forced simulation mode, isolated
+The suite (69 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
 autopilot, standing orders (recurring directives), the CRM/pipeline (customers,
 deals, tickets from agent activity), drill-down detail (directive task trees and
-customer records), the cross-thread event bus, the human-in-the-loop controls
-(approval gating, agent config persistence, cost tracking, budget alerts), the
-KPI time series, and optional token auth.
+customer records), multi-company isolation, the cross-thread event bus, the
+human-in-the-loop controls (approval gating, agent config persistence, cost
+tracking, budget alerts), the KPI time series, and optional token auth.
 
 ## Design notes
 
