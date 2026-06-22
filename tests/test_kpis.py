@@ -12,18 +12,21 @@ def test_kpi_snapshots_accumulate(company):
     assert deliverables == sorted(deliverables)
 
 
-def test_sales_work_drives_revenue(company):
-    # A campaign cascades into a completed sales plan -> modeled revenue.
+def test_sales_work_creates_crm_records(company):
+    # A campaign cascades into a completed sales plan -> a CRM customer + deal.
     company.submit_directive("Run a marketing campaign for new pricing")
     company.run_until_idle()
     sales_done = [
         t for t in company.db.get_tasks()
         if t.department == Department.SALES and t.status.value == "done"
     ]
+    crm = company.db.crm_summary()
     latest = company.snapshot()["kpi_latest"]
     if sales_done:
-        assert latest["revenue"] > 0
-        assert latest["customers"] > 0
+        assert crm["customers_total"] >= 1
+        assert crm["deals_total"] >= 1
+        # KPI revenue reads straight off won deals — they must agree.
+        assert latest["revenue"] == crm["revenue"]
 
 
 def test_snapshot_exposes_kpis(company):

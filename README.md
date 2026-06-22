@@ -64,12 +64,19 @@ And the human stays **in control** when they want to be:
   usage and cost; the dashboard shows live spend against a budget and the
   company raises an alert when the budget is exceeded.
 
+It has a real **business backbone**:
+
+- **CRM / pipeline** — completed Sales work becomes real Customer and Deal
+  records (won or lost, ~75% win rate), and resolved Support issues become
+  Tickets. The dashboard shows active customers, win rate, revenue, recent deals,
+  and recent tickets — all created automatically from agent activity.
+
 And it's **production-ready**:
 
 - **Business KPIs over time** — revenue, customers, tickets resolved, and
   deliverables are snapshotted after every completed task and charted live on the
-  dashboard. Business figures are modeled from real activity (each closed sales
-  task is a deal), so the charts move with what the company actually does.
+  dashboard. Revenue and customers read straight off the CRM (won deals, active
+  customers), so the charts are backed by real entities, not a formula.
 - **Optional auth** — set `COMPANY_API_TOKEN` and state-changing requests require
   the token (reads stay open so the dashboard still works); unset, everything is
   open for local use.
@@ -86,8 +93,8 @@ And it's **production-ready**:
 | **Development** | Implements features from specs, validates the code compiles, opens a PR; fixes QA-reported defects on rework. |
 | **Quality Assurance** | Independently re-checks builds, **approves or rejects**, drives the rework loop, then asks Support to prep release notes. |
 | **Marketing** | Creates positioning and launch campaigns; briefs Sales. |
-| **Sales** | Turns campaign interest into pipeline and outreach sequences. |
-| **Customer Support** | Resolves issues, reuses/writes help content, escalates real gaps to Product. |
+| **Sales** | Turns campaign interest into pipeline and outreach; closes deals into the CRM. |
+| **Customer Support** | Resolves issues (filing CRM tickets), writes help content, escalates real gaps to Product. |
 | **Analytics** | Measures **real outcomes from company data** and recommends the next move. |
 
 ## Runs with or without an API key
@@ -139,6 +146,7 @@ The single human seat. From `http://127.0.0.1:8000` you can:
 - Watch a live **reasoning ticker** as agents start working (streamed, not polled).
 - Watch every **department** light up as it works (live status).
 - Track **Business KPIs** (revenue, customers, tickets resolved) on live charts.
+- Browse the **CRM** — active customers, win rate, recent deals and tickets.
 - Follow the **activity feed** of delegations, work, and hand-offs in real time.
 - Open any **deliverable** to read what an agent produced.
 - See company-wide **metrics** (tasks, in progress, awaiting, rework, est. cost).
@@ -170,6 +178,7 @@ company/
   world.py           autopilot: generates inbound tickets/leads/ideas on a timer
   agentconfig.py     human-tunable per-department config (model/effort/instructions/enabled)
   (standing orders)  recurring directives on a schedule — see orchestrator + db
+  (CRM)              customers / deals / tickets from agent activity — see orchestrator + db
   orchestrator.py    the engine: delegation, work loop, rework, approvals, cost, background worker
   agents/
     ceo.py           decomposes a human directive into delegated tasks
@@ -197,7 +206,7 @@ loop. A directive auto-closes when all its tasks are done.
 |---|---|---|
 | `GET` | `/` | The dashboard. |
 | `GET` | `/api/health` | Liveness + current mode. |
-| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, approvals, agents, cost). |
+| `GET` | `/api/state` | Full live snapshot (directives, tasks, artifacts, events, metrics, approvals, agents, cost, KPIs, CRM). |
 | `GET` | `/api/stream` | Server-Sent Events: live activity + agent reasoning. |
 | `POST` | `/api/directive` | Submit a human direction: `{"text": "..."}`. |
 | `POST` | `/api/world/start` · `/stop` | Turn autopilot on/off. |
@@ -219,13 +228,14 @@ ruff check .
 pytest
 ```
 
-The suite (53 tests) runs entirely offline (forced simulation mode, isolated
+The suite (58 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
 rework loop (rejection → fix → re-verify, bounded and terminating), the world
-autopilot, standing orders (recurring directives), the cross-thread event bus,
-the human-in-the-loop controls (approval gating, agent config persistence, cost
+autopilot, standing orders (recurring directives), the CRM/pipeline (customers,
+deals, tickets from agent activity), the cross-thread event bus, the
+human-in-the-loop controls (approval gating, agent config persistence, cost
 tracking, budget alerts), the KPI time series, and optional token auth.
 
 ## Design notes

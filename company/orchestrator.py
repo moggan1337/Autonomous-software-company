@@ -26,6 +26,8 @@ from .db import Database
 from .llm import LLMClient
 from .models import (
     WORKER_DEPARTMENTS,
+    Customer,
+    Deal,
     Department,
     Directive,
     Event,
@@ -33,11 +35,18 @@ from .models import (
     StandingOrder,
     Task,
     TaskStatus,
+    Ticket,
     _id,
     now,
 )
 from .tools import ToolBox
 from .world import World
+
+_COMPANY_NAMES = [
+    "Acme Corp", "Globex", "Initech", "Umbrella", "Hooli", "Stark Industries",
+    "Wayne Enterprises", "Soylent", "Vandelay", "Wonka", "Cyberdyne", "Massive Dynamic",
+]
+_ISSUE_WORDS = ("bug", "broken", "error", "issue", "complaint", "crash", "fail", "reset", "slow", "wrong")
 
 log = logging.getLogger("company.orchestrator")
 
@@ -138,6 +147,7 @@ class Company:
 
         self.db.update_task(task.id, status=TaskStatus.DONE, result=result.summary)
         self._record_usage(task, result)
+        self._update_crm(task)
         self._record_kpi()
         if result.artifact:
             self.db.add_artifact(result.artifact)
@@ -293,17 +303,51 @@ class Company:
                 "error",
             )
 
+    def _update_crm(self, task: Task) -> None:
+        """Turn completed Sales/Support work into real CRM records.
+
+        A closed sales task becomes a Customer + a won/lost Deal; a resolved
+        support issue becomes a Ticket. The KPI revenue/customer figures then
+        read straight off these records, so the business numbers are backed by
+        actual entities rather than a formula.
+        """
+        if task.department == Department.SALES:
+            h = sum(ord(c) for c in task.id)
+            won = h % 4 != 0  # ~75% win rate, deterministic
+            name = _COMPANY_NAMES[h % len(_COMPANY_NAMES)]
+            seats = 3 + (h % 8)
+            customer = Customer(
+                name=name,
+                status="active" if won else "lost",
+                seats=seats if won else 0,
+            )
+            self.db.add_customer(customer)
+            self.db.add_deal(
+                Deal(
+                    name=task.title,
+                    value=(1000 + (h % 9) * 250) if won else 0.0,
+                    stage="won" if won else "lost",
+                    customer_id=customer.id,
+                    closed_at=now(),
+                )
+            )
+        elif task.department == Department.SUPPORT:
+            text = f"{task.title} {task.description}".lower()
+            if any(w in text for w in _ISSUE_WORDS):
+                self.db.add_ticket(
+                    Ticket(subject=task.title, status="resolved",
+                           priority=task.priority.value, resolved_at=now())
+                )
+
     def _record_kpi(self) -> None:
         """Snapshot business + operational KPIs after each completed task.
 
-        Business figures (revenue, customers) are modeled from real activity —
-        each closed sales task is a deal — so the charts move with what the
-        company actually does, not random walks.
+        Business figures read off the CRM tables (won deals, active customers,
+        resolved tickets), so the charts move with what the company actually
+        closes and resolves — not a formula on task counts.
         """
         metrics = self.tools.company_metrics()
-        by_dept = metrics["throughput_by_department"]
-        sales_done = by_dept.get(Department.SALES.value, 0)
-        support_done = by_dept.get(Department.SUPPORT.value, 0)
+        crm = self.db.crm_summary()
         self.db.add_kpi_snapshot(
             _id("kpi"),
             now(),
@@ -311,9 +355,9 @@ class Company:
                 "tasks_done": metrics["completed"],
                 "deliverables": metrics["deliverables"],
                 "cost": self.db.cost_summary()["total_cost"],
-                "revenue": sales_done * 1500.0,        # avg deal value
-                "customers": sales_done * 4,           # seats per closed deal
-                "tickets_resolved": support_done,
+                "revenue": crm["revenue"],
+                "customers": crm["customers_active"],
+                "tickets_resolved": crm["tickets_resolved"],
             },
         )
 
@@ -408,6 +452,12 @@ class Company:
             "cost": cost,
             "kpis": kpis,
             "kpi_latest": latest_kpi,
+            "crm": {
+                "summary": self.db.crm_summary(),
+                "customers": self.db.get_customers(20),
+                "deals": self.db.get_deals(20),
+                "tickets": self.db.get_tickets(20),
+            },
             "departments": [
                 {
                     "id": d.value,

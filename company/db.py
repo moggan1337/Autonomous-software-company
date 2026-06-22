@@ -84,6 +84,32 @@ CREATE TABLE IF NOT EXISTS standing_orders (
     runs INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    seats INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'sales',
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deals (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT,
+    name TEXT NOT NULL,
+    value REAL NOT NULL,
+    stage TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    closed_at REAL
+);
+CREATE TABLE IF NOT EXISTS tickets (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT,
+    subject TEXT NOT NULL,
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    created_at REAL NOT NULL,
+    resolved_at REAL
+);
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -293,6 +319,73 @@ class Database:
             "SELECT * FROM kpi_snapshots ORDER BY ts DESC LIMIT ?", (limit,)
         )
         return [dict(r) for r in reversed(rows)]
+
+    # ---- CRM: customers / deals / tickets ---------------------------------
+    def add_customer(self, c) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO customers (id, name, status, seats, source, created_at) VALUES (?,?,?,?,?,?)",
+                (c.id, c.name, c.status, c.seats, c.source, c.created_at),
+            )
+            self._conn.commit()
+
+    def add_deal(self, d) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO deals (id, customer_id, name, value, stage, created_at, closed_at) VALUES (?,?,?,?,?,?,?)",
+                (d.id, d.customer_id, d.name, d.value, d.stage, d.created_at, d.closed_at),
+            )
+            self._conn.commit()
+
+    def add_ticket(self, t) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO tickets (id, customer_id, subject, status, priority, created_at, resolved_at) VALUES (?,?,?,?,?,?,?)",
+                (t.id, t.customer_id, t.subject, t.status, t.priority, t.created_at, t.resolved_at),
+            )
+            self._conn.commit()
+
+    def get_customers(self, limit: int = 50) -> list[dict]:
+        return [dict(r) for r in self._query(
+            "SELECT * FROM customers ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+    def get_deals(self, limit: int = 50) -> list[dict]:
+        return [dict(r) for r in self._query(
+            "SELECT * FROM deals ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+    def get_tickets(self, limit: int = 50) -> list[dict]:
+        return [dict(r) for r in self._query(
+            "SELECT * FROM tickets ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+    def crm_summary(self) -> dict:
+        cust = self._query(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(status='active'),0) AS active, "
+            "COALESCE(SUM(seats),0) AS seats FROM customers"
+        )[0]
+        deals = self._query(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(stage='won'),0) AS won, "
+            "COALESCE(SUM(stage='lost'),0) AS lost, "
+            "COALESCE(SUM(CASE WHEN stage='won' THEN value ELSE 0 END),0) AS revenue FROM deals"
+        )[0]
+        tickets = self._query(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(status='resolved'),0) AS resolved, "
+            "COALESCE(SUM(status='open'),0) AS open FROM tickets"
+        )[0]
+        won = deals["won"] or 0
+        total_deals = deals["total"] or 0
+        return {
+            "customers_total": cust["total"] or 0,
+            "customers_active": cust["active"] or 0,
+            "seats": cust["seats"] or 0,
+            "deals_total": total_deals,
+            "deals_won": won,
+            "deals_lost": deals["lost"] or 0,
+            "win_rate": round(won / total_deals, 2) if total_deals else 0.0,
+            "revenue": round(deals["revenue"] or 0.0, 2),
+            "tickets_total": tickets["total"] or 0,
+            "tickets_resolved": tickets["resolved"] or 0,
+            "tickets_open": tickets["open"] or 0,
+        }
 
     # ---- standing orders (recurring directives) ---------------------------
     def add_standing_order(self, order) -> None:

@@ -141,6 +141,47 @@ class AgentConfig:
 
 
 @dataclass
+class Customer:
+    name: str
+    status: str = "active"          # active | lead | lost
+    seats: int = 1
+    source: str = "sales"
+    id: str = field(default_factory=lambda: _id("cust"))
+    created_at: float = field(default_factory=now)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Deal:
+    name: str
+    value: float
+    stage: str = "won"             # won | lost
+    customer_id: str | None = None
+    id: str = field(default_factory=lambda: _id("deal"))
+    created_at: float = field(default_factory=now)
+    closed_at: float | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Ticket:
+    subject: str
+    status: str = "resolved"       # open | resolved
+    priority: str = "normal"
+    customer_id: str | None = None
+    id: str = field(default_factory=lambda: _id("tkt"))
+    created_at: float = field(default_factory=now)
+    resolved_at: float | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class StandingOrder:
     """A recurring directive the company submits to itself on a fixed interval."""
 

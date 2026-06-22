@@ -95,6 +95,25 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: v
 
 .metric.over .num { color: var(--red); }
 
+.crm { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.crm-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+.crm-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.crm-card .c-num { font-size: 22px; font-weight: 700; }
+.crm-card .c-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.crm-list h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.crm-list ul { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.crm-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 6px; background: var(--panel-2); font-size: 13px;
+}
+.pill { font-size: 10px; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+.pill.won, .pill.resolved { background: rgba(63,185,80,.18); color: var(--green); }
+.pill.lost { background: rgba(248,81,73,.18); color: var(--red); }
+.pill.open { background: rgba(210,153,34,.18); color: var(--amber); }
+.crm-empty { color: var(--muted); font-size: 13px; padding: 6px; }
+@media (max-width: 900px) { .crm-cards { grid-template-columns: repeat(2, 1fr); } }
+
 .schedules { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
 .sched-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .sched-form input[type=text] { flex: 1; min-width: 200px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }

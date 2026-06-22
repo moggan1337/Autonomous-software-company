@@ -98,11 +98,47 @@ function render(state) {
   renderToggles(state);
   renderMetrics(state);
   renderKpis(state);
+  renderCrm(state.crm);
   renderApprovals(state.approvals || []);
   renderSchedules(state.schedules || []);
   renderDepartments(state);
   renderFeed(state.events);
   renderArtifacts(state.artifacts);
+}
+
+function renderCrm(crm) {
+  if (!crm) return;
+  const s = crm.summary || {};
+  const cards = [
+    { label: "Active customers", num: s.customers_active ?? 0 },
+    { label: "Revenue", num: `$${Math.round(s.revenue || 0).toLocaleString()}` },
+    { label: "Win rate", num: `${Math.round((s.win_rate || 0) * 100)}%` },
+    { label: "Tickets resolved", num: s.tickets_resolved ?? 0 },
+  ];
+  document.getElementById("crm-cards").innerHTML = cards
+    .map((c) => `<div class="crm-card"><div class="c-num">${c.num}</div><div class="c-label">${c.label}</div></div>`)
+    .join("");
+
+  const deals = crm.deals || [];
+  document.getElementById("crm-deals").innerHTML = deals.length
+    ? deals
+        .map(
+          (d) => `<li><span>${escapeHtml(d.name)}</span>
+            <span><b>$${Math.round(d.value).toLocaleString()}</b>
+            <span class="pill ${d.stage}">${d.stage}</span></span></li>`
+        )
+        .join("")
+    : `<li class="crm-empty">Deals appear as Sales closes work.</li>`;
+
+  const tickets = crm.tickets || [];
+  document.getElementById("crm-tickets").innerHTML = tickets.length
+    ? tickets
+        .map(
+          (t) => `<li><span>${escapeHtml(t.subject)}</span>
+            <span class="pill ${t.status}">${t.status}</span></li>`
+        )
+        .join("")
+    : `<li class="crm-empty">Tickets appear as Support resolves issues.</li>`;
 }
 
 function renderSchedules(orders) {
