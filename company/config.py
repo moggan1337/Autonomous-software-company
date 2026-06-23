@@ -57,6 +57,8 @@ class Settings:
     force_simulate: bool
     budget: float
     api_token: str | None
+    rate_limit: int = 300       # max state-changing requests per client per window (0 disables)
+    rate_window: float = 60.0   # window length in seconds
 
     @property
     def simulate(self) -> bool:
@@ -73,6 +75,8 @@ def load_settings() -> Settings:
         force_simulate=os.environ.get("COMPANY_SIMULATE", "0") == "1",
         budget=float(os.environ.get("COMPANY_BUDGET", "25") or 25),
         api_token=os.environ.get("COMPANY_API_TOKEN") or None,
+        rate_limit=int(os.environ.get("COMPANY_RATE_LIMIT", "300") or 300),
+        rate_window=float(os.environ.get("COMPANY_RATE_WINDOW", "60") or 60),
     )
 
 

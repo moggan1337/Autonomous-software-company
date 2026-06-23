@@ -23,6 +23,9 @@ from .config import SETTINGS
 from .manager import CompanyManager
 from .models import Department
 from .orchestrator import Company
+from .ratelimit import RateLimiter
+
+_MUTATING = ("POST", "PUT", "DELETE", "PATCH")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -35,6 +38,9 @@ API_TOKEN = SETTINGS.api_token
 
 # /api paths reachable without a token even when one is configured.
 _PUBLIC_API_PATHS = {"/api/health"}
+
+# Anti-abuse: cap state-changing requests per client (reads/SSE are not limited).
+RATE_LIMITER = RateLimiter(SETTINGS.rate_limit, SETTINGS.rate_window)
 
 
 def _request_token(request: Request) -> str:
@@ -77,6 +83,21 @@ async def require_token(request: Request, call_next):
         if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
             if not hmac.compare_digest(_request_token(request), API_TOKEN):
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Throttle state-changing requests per client IP to curb directive/company spam."""
+    if request.method in _MUTATING and request.url.path.startswith("/api/"):
+        client = request.client.host if request.client else "unknown"
+        allowed, retry_after = RATE_LIMITER.check(client)
+        if not allowed:
+            return JSONResponse(
+                {"detail": "Rate limit exceeded. Slow down."},
+                status_code=429,
+                headers={"Retry-After": str(int(retry_after) + 1)},
+            )
     return await call_next(request)
 
 

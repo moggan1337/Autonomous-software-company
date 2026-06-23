@@ -1,12 +1,16 @@
 """Security-hardening behaviors from the audit."""
 import pytest
+from fastapi.testclient import TestClient
 
+import company.api as api
 import company.db as dbmod
+from company.api import app
 from company.config import Settings
 from company.db import Database
 from company.manager import CompanyManager
 from company.models import Department, Event
 from company.orchestrator import Company
+from company.ratelimit import RateLimiter
 
 
 def _settings(tmp_path) -> Settings:
@@ -56,3 +60,29 @@ def test_events_table_is_trimmed(tmp_path, monkeypatch):
         db.add_event(Event(department=Department.CEO, message=str(i), kind="info"))
     assert len(db.get_events(1000)) <= 5
     db.close()
+
+
+def test_rate_limiter_allows_then_blocks():
+    rl = RateLimiter(limit=3, window=60)
+    key = "1.2.3.4"
+    assert all(rl.check(key)[0] for _ in range(3))
+    allowed, retry_after = rl.check(key)
+    assert allowed is False
+    assert retry_after > 0
+
+
+def test_rate_limiter_disabled_when_zero():
+    rl = RateLimiter(limit=0, window=60)
+    assert all(rl.check("x")[0] for _ in range(1000))
+
+
+def test_api_rate_limit_returns_429(monkeypatch):
+    monkeypatch.setattr(api, "RATE_LIMITER", RateLimiter(limit=2, window=60))
+    with TestClient(app) as client:
+        assert client.post("/api/world/start").status_code == 200
+        assert client.post("/api/world/stop").status_code == 200
+        blocked = client.post("/api/world/start")
+        assert blocked.status_code == 429
+        assert "Retry-After" in blocked.headers
+        # Reads are never rate-limited.
+        assert client.get("/api/state").status_code == 200

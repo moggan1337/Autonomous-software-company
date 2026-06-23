@@ -175,7 +175,9 @@ All via environment variables (or a `.env` file — see `.env.example`):
 | `COMPANY_DB` | `company.db` | SQLite state file. |
 | `COMPANY_SIMULATE` | `0` | Set `1` to force simulation even with a key. |
 | `COMPANY_BUDGET` | `25` | Spend budget (USD) before the company raises a budget alert. |
-| `COMPANY_API_TOKEN` | _(unset)_ | If set, state-changing API calls require this token. |
+| `COMPANY_API_TOKEN` | _(unset)_ | If set, all API calls (except `/api/health`) require this token. |
+| `COMPANY_RATE_LIMIT` | `300` | Max state-changing requests per client per window (`0` disables). |
+| `COMPANY_RATE_WINDOW` | `60` | Rate-limit window length, in seconds. |
 
 ## Architecture
 
@@ -241,6 +243,10 @@ require the token — via `Authorization: Bearer <token>`, `X-API-Token`, or
 `?token=` (the query form lets the SSE stream authenticate). Comparison is
 constant-time. Unset, the API is open for local use.
 
+State-changing requests are rate-limited per client IP (`COMPANY_RATE_LIMIT` per
+`COMPANY_RATE_WINDOW` seconds; reads and SSE are never throttled); exceeding the
+limit returns `429` with a `Retry-After` header.
+
 ## Tests
 
 ```bash
@@ -249,7 +255,7 @@ ruff check .
 pytest
 ```
 
-The suite (74 tests) runs entirely offline (forced simulation mode, isolated
+The suite (77 tests) runs entirely offline (forced simulation mode, isolated
 temp DB) and covers CEO routing, the cross-department cascade and its
 termination, deliverable production, the snapshot shape, the LLM fallback, the
 HTTP API, the tools (memory recall, live metrics, code validation), the QA
@@ -259,8 +265,8 @@ deals, tickets from agent activity), drill-down detail (directive task trees and
 customer records), multi-company isolation, the cross-thread event bus, the
 human-in-the-loop controls (approval gating, agent config persistence, cost
 tracking, budget alerts), the KPI time series, optional token auth, and the
-security hardening (read gating, company cap, log sanitization, SQL column
-guard, table retention).
+security hardening (read gating, rate limiting, company cap, log sanitization,
+SQL column guard, table retention).
 
 ## Design notes
 
